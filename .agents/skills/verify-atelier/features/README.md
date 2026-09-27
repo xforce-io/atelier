@@ -1,11 +1,11 @@
 # 功能地图
 
-首项桌面交付，Issue #1；当前为设计映射，全部尚未执行。
+Issue #1：CLI 与产品 Atelier Skill，全部待实现，非已通过证明。退役桌面验收不列入本期。
 
-| 功能文件 | 验收 | 真实入口 |
+| 文件 | L1.8 | 真实入口 |
 |---|---|---|
-| [setup-and-intake.md](setup-and-intake.md) | S1 / S1.A1–S1.A6 | 工作区 → 成员/模型连接 → 团队 → 检验配置/环境 → 新建任务与承接 |
-| [code-delivery.md](code-delivery.md) | S2 / S2.A1–S2.A3 | Team → 任务 → 开始执行 → 产出与检验；关闭窗口 → Dock 重开 |
-| [verification-rework.md](verification-rework.md) | S3 / S3.A1–S3.A4 | 任务 → 产出与检验 → 交给检验者 → 安排返工 → 再次送检 |
-| [human-acceptance.md](human-acceptance.md) | S4 / S4.A1–S4.A6 | 任务 → 验收面板 → 接受/要求返工；产出 → 导出代码副本 |
-| [failure-and-lifecycle.md](failure-and-lifecycle.md) | S5 / S5.A1–S5.A6 | 任务错误详情/取消；应用菜单退出；重开/重新核对；所有表单键鼠操作 |
+| [setup-and-intake.md](setup-and-intake.md) | S1 / A1–A7 | CLI 配置/初始化/承接；宿主安装与加载产品 Skill |
+| [code-delivery.md](code-delivery.md) | S2 / A1、A3–A5 | CLI execute/show；Skill 从目标到待验收 |
+| [verification-rework.md](verification-rework.md) | S3 / A1–A4 | CLI verify/rework；Skill 解释失败并在授权内推进 |
+| [human-acceptance.md](human-acceptance.md) | S4 / A1–A7 | CLI accept/reject/export；Skill 呈现依据并落实人类决定 |
+| [failure-and-lifecycle.md](failure-and-lifecycle.md) | S5 / A1、A2、A4、A5、A7–A9 | CLI cancel/reconcile/request show、信号；Skill 超时与重入 |

@@ -6,9 +6,11 @@
 - 采用新版 keel 两层设计：L1 产品设计定义完整路径、规则及第 8 节逐项验收；L2 技术设计引用明确 L1 版本定义实现契约。两层不再各分概要/详细。
 - `docs/overview.md` 保留项目方向，不替代 Issue 的 L1；新设计默认放在 `docs/design/{issue}-{slug}/product.md` 与 `technical.md`，Issue 只放范围、验收汇总与设计摘要链接。
 - Issue S 与 L1.8 稳定子项、L2.8 测试及应用功能地图保持关联；标准与实际验证结果分开，缺环境或未运行不得标为通过。
+- 每条 L1 Story 提供交互图或明确覆盖引用，关联 L1.8；仅单步无分支可说明原因后省略，纯技术无用户交互可标 N/A。图表达用户操作与可见反馈，不用技术架构图替代。
 - 以 Worker 统一表达人和数字员工；权限不只由 Worker 类型决定。
 - 区分数字员工、执行器与单次执行；区分执行结束、检验通过与任务验收。
-- 语言方向为 Rust 核心与 GPUI 桌面界面、TypeScript 的 milkie 接入；不为统一语言重写 milkie。
+- 首个 feature 为 Rust 核心与 CLI、Atelier Skill、TypeScript milkie 接入；GPUI 桌面入口后续实现，不为统一语言重写 milkie。
+- CLI 与 Skill 分别验证真实入口；Skill 负责引导与编排，核心强制规则，不以 Skill 文件存在或模型自报代替交付验收。
 - 第一方核心默认使用 safe Rust；不得通过放宽检查、删除有效断言或引入多余抽象掩盖问题。
 - 不提交凭据、私有实例配置、会话内容或真实业务数据。
 - 进入仓库及平台写操作前确认 `git remote get-url origin`，按实际托管平台选择工具。
