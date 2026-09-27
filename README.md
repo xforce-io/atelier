@@ -4,7 +4,7 @@
 
 Atelier 是一个独立项目，面向人和数字员工的持续团队协作。它以任务契约组织工作，将讨论、委派、执行、交接、检验和验收连接成可观察的交付过程。
 
-Atelier 以 Worker 统一表达 Human Worker 和 Agent Worker（数字员工），以 Task 组织工作，以 Team 组织持续交付。每个 Team 必须有且只有一名团队负责人，由人或数字员工担任，成员按职责直接协作。任务契约、产出、检验与验收分别保留记录。
+Atelier 以 Worker 统一表达 Human Worker 和 Agent Worker（数字员工），以 Task 组织工作，以 Team 组织持续交付。每个 Team 必须有且只有一名团队负责人，由人或数字员工担任，成员按职责直接协作。任务契约、产出、检验与验收分别保留记录。 Task 可交给一个 Worker 或一个 Team；当前对话最多聚焦一个 Task，切换不结束原工作，成员与团队可以持续承担多项任务。
 
 语言方向为 Rust 核心与 CLI，TypeScript 的 milkie 接入与 UI。milkie 提供底层 agent runtime，通过进程协议接入；Atelier 保有工作与协作状态，并为不同 coding agent 保留能力边界。
 
