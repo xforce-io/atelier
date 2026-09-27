@@ -27,6 +27,7 @@
 | Task Contract/任务契约 | 对 Task 的目标、Law、检验方式、Guardrail、输入及交付要求的版本化表达。 | — |
 | Goal/目标 | 工作需要达成的可观察结果，应与产出及执行活动区分。 | — |
 | Verification Method/检验方式 | 根据任务契约通过测试、工具、独立检查或人工判断收集证据并判断要求的方式。 | — |
+| Verification Profile/检验配置 | 固定可执行检查、运行环境与输出要求的配置，供核心采集指定版本产出的独立检验证据，模型不能自行修改。 | — |
 | Inputs and Preconditions/输入与前置条件 | 开始或继续任务所需的资料、权限和依赖条件。 | — |
 | Delivery and Handoff Requirements/交付与交接要求 | 任务契约中对预期产出、接收者所需信息及后续职责的要求。 | — |
 | Contract Version/契约版本 | 标识任务当前或历史要求的版本，用于关联执行、检验与验收依据。 | — |
