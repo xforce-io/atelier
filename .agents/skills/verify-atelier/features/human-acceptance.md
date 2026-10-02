@@ -1,13 +1,26 @@
 # S4 验证路径
 
-状态：待实现、未执行。标准为 [L1 v0.4 第 8 节](../../../../docs/design/1-first-team-delivery/product.md#8-验收与效果验证) 的 S4.A1–A7；不复制另一套成功标准。
+状态：验收及导出入口已实现，完整真实 CLI/Skill 路径未验收。标准为 [L1 v0.10 第 8 节](../../../../docs/design/1-first-team-delivery/product.md#8-验收与效果验证) 的 S4.A1–A8；本文件只提供路径，不复制另一套验收标准。
 
 ## 真实入口
 
-CLI accept/reject/export；Skill 呈现依据并落实人类决定。
+本人收件箱待验收、查询依据、明确接受/拒绝、过期/无权拒绝和无覆盖导出。
 
 ## 驾驶与证据
 
-权限/过期/拒绝/无效检查、无覆盖导出；Skill 不擅自接受且决定绑定版本。
+覆盖拒绝旧请求、禁止同产出重开、返工新版与新检验/请求后接受的完整闭环。
 
-按 L1 每项前置、操作、禁止结果与证据要求执行，关联同一候选和设计版本；实际命令/宿主配置未落实前 BLOCKED。CLI 与 Skill 记录分开，不能以安装文本或直接调用 API 代替对应入口。
+数字员工不能代验收；关闭后的迟到消息不重开任务；证明消息已读不等于正式决定。
+
+对 S4.A3/A4 分别核对旧产出检验、缺少有效独立检验、fail/inconclusive，以及普通说明声称已 review；从 CLI 与真实 Skill 尝试验收，保留拒绝和未关闭状态的证据。换消息、入口或请求 ID 不能绕过契约条件。
+
+CLI 和产品 Atelier Skill 分别验证；需要真实成员的路径不可用 stub 或宿主脚本替代。版本、对象和原始脱敏证据对应 L1/L2 v0.10。当前 CLI/受控成员入口已有 Integration；真实模型业务及产品 Skill 的明确人类决定路径尚未验收，BLOCKED，不填 pass。
+
+## 当前入口与开发证据
+
+- 人类团队负责人：`task acceptance request <Task> --revision <版本> --artifact <ID> --verification <ID> --summary <说明>`；数字团队负责人：受控 `acceptance_request` 后以 `message_respond(kind=decision)` 保存等待依据。请求不结束活动 Run，也不自动代答。
+- 本人：`task accept/reject <Task> --revision <任务版本> --request <请求 ID> --request-revision <请求版本> --reason <决定依据>`，写操作带 `--request-id`；Skill 代调还须保存脱敏 `--decision-ref`。通过 `task decision show`、`task acceptance show` 分别查询事项和不可变接受/拒绝记录。
+- 拒绝后：人类负责人 `task rework --rejection <请求 ID>`，数字负责人 `task_arrange` 引用 reason.kind=rejection；新产出、新独立检验后提出新验收请求。服务不自行返工。
+- 取走结果：`artifact export <ID> --destination <新目录或空目录>`，父目录须存在，不能指向工作区内部。导出无需任务 requestId；检查返回的 contentDigest、partial 与清单，对照文件和可执行位；非空/链接目录拒绝，重复导出不覆盖。导出前后 Task/验收记录一致。
+
+常规 Integration 已覆盖停止/授权/版本/独立证据门禁、事务失败整体回滚、拒绝后同产出重开拒绝、数字负责人接收拒绝后显式安排，以及部分产出导出、损坏内容拒绝和无覆盖。真实 Docker/CLI Integration 覆盖通过→人类拒绝→返工新版→独立通过→新请求接受，并核对当前/历史版本导出。候选和成员决定为 fixture，不能替代真实成员、真实 Skill 或实际游玩证据。完整 S4 仍未验收。
