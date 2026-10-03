@@ -1,7 +1,7 @@
 /** One private configuration line, then keep stdin open for resource ownership. */
 import {networkInterfaces} from 'node:os';
 import {isIP} from 'node:net';
-import {createEgressProxy,policyHosts} from './egress-proxy.js';
+import {createEgressProxy,policyHosts,parseUpstreamProxy} from './egress-proxy.js';
 
 let configured=false;
 let bytes=Buffer.alloc(0);
@@ -25,9 +25,9 @@ process.stdin.on('data',(chunk:Buffer)=>{
   try{
     if(end!==bytes.length-1)throw new Error('invalid_config');
     const value=JSON.parse(bytes.subarray(0,end).toString('utf8')) as Record<string,unknown>;
-    if(Object.keys(value).sort().join(',')!=='hosts,listenHost'||typeof value.listenHost!=='string'||isIP(value.listenHost)!==4||value.listenHost==='0.0.0.0'||
+    if(Object.keys(value).filter(k=>k!=='upstream').sort().join(',')!=='hosts,listenHost'||typeof value.listenHost!=='string'||isIP(value.listenHost)!==4||value.listenHost==='0.0.0.0'||
       !Object.values(networkInterfaces()).flat().some(i=>i?.address===value.listenHost))throw new Error('invalid_config');
-    proxy=createEgressProxy(policyHosts(value.hosts));
+    proxy=createEgressProxy(policyHosts(value.hosts),undefined,value.upstream===undefined?undefined:parseUpstreamProxy(value.upstream));
     proxy.server.once('error',()=>{process.exitCode=1;void stop();});
     proxy.server.listen(3128,value.listenHost,()=>process.stdout.write(JSON.stringify({state:'listening',port:3128})+'\n'));
   }catch{process.exitCode=1;void stop();}

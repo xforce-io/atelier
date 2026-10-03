@@ -279,6 +279,7 @@ async fn perform(
         runtime,
         model,
         egress_hosts: Some(hosts),
+        egress_proxy,
         ..
     } = version.specification
     else {
@@ -293,6 +294,9 @@ async fn perform(
         "image":record.image,"runtime":runtime,"configDirectory":environment.directory(&store.workspace_path).join("login"),"hosts":hosts});
     if let Some(model) = model {
         bootstrap["model"] = json!(model);
+    }
+    if let Some(proxy) = egress_proxy {
+        bootstrap["upstream"] = json!(proxy);
     }
     let mut input = serde_json::to_vec(&bootstrap)?;
     if input.len() > 8191 {
@@ -474,6 +478,7 @@ mod tests {
                         model: None,
                         image: Some(format!("sha256:{}", "a".repeat(64))),
                         egress_hosts: Some(vec!["example.com".into()]),
+                        egress_proxy: None,
                     },
                 },
             )

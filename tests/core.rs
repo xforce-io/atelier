@@ -1272,6 +1272,7 @@ fn connection_fields_are_exclusive_and_secrets_are_not_configuration() {
                     model: None,
                     image: None,
                     egress_hosts: None,
+                    egress_proxy: None,
                 },
             },
         )
@@ -5398,6 +5399,7 @@ fn real_keychain_credentials_are_versioned_private_and_retryable() {
                     model: None,
                     image: None,
                     egress_hosts: None,
+                    egress_proxy: None,
                 }
             }
         ),
@@ -9794,6 +9796,12 @@ fn prepared_cli_fixture() -> (Fixture, Run) {
     prepared_cli_fixture_with_policy(Some(vec!["example.com".into()]))
 }
 fn prepared_cli_fixture_with_policy(egress_hosts: Option<Vec<String>>) -> (Fixture, Run) {
+    prepared_cli_fixture_with_route(egress_hosts, None)
+}
+fn prepared_cli_fixture_with_route(
+    egress_hosts: Option<Vec<String>>,
+    egress_proxy: Option<atelier::connection::EgressProxy>,
+) -> (Fixture, Run) {
     let mut f = Fixture::new(true);
     f.prepare_digital_leader();
     let connection = f
@@ -9807,6 +9815,7 @@ fn prepared_cli_fixture_with_policy(egress_hosts: Option<Vec<String>>) -> (Fixtu
                     model: None,
                     image: Some(CLI_RESOURCE_IMAGE.into()),
                     egress_hosts,
+                    egress_proxy,
                 },
             },
         )
@@ -9895,6 +9904,7 @@ fn cli_egress_policy_is_explicit_versioned_and_cannot_expand_an_existing_run() {
                     model: None,
                     image: Some(CLI_RESOURCE_IMAGE.into()),
                     egress_hosts: Some(vec!["example.com".into(), "another.example".into()]),
+                    egress_proxy: None,
                 }),
             },
         )
@@ -10609,4 +10619,86 @@ fn foreign_delivery_reconciliation_is_read_only_context_bound_and_reauthorizes()
         .unwrap();
     assert!(f.store.member_reconcile(&current, &request).is_err());
     assert_eq!(counts(), before);
+}
+
+#[test]
+fn cli_network_proxy_is_explicit_validated_and_frozen_with_the_run() {
+    use atelier::connection::{ConnectionSpec, EgressProxy};
+    let base = json!({"transport":"agent-cli","runtime":"pi","model":null,"image":null,"egress_hosts":["example.com"]});
+    for proxy in [
+        json!({"address":"localhost","port":80}),
+        json!({"address":"127.0.0.1","port":80}),
+        json!({"address":"169.254.169.254","port":80}),
+        json!({"address":"192.168.5.2","port":0}),
+        json!({"address":"192.168.5.2","port":65536}),
+        json!({"address":"192.168.5.2","port":80,"password":"secret"}),
+        json!("http://user:secret@192.168.5.2:80"),
+    ] {
+        let mut value = base.clone();
+        value["egress_proxy"] = proxy;
+        assert!(
+            serde_json::from_value::<ConnectionSpec>(value)
+                .map(|s| s.validate().is_err())
+                .unwrap_or(true)
+        );
+    }
+    let route = EgressProxy {
+        address: "192.168.5.2".into(),
+        port: 9567,
+    };
+    let (mut f, run) =
+        prepared_cli_fixture_with_route(Some(vec!["example.com".into()]), Some(route.clone()));
+    let config = f
+        .store
+        .execution_configuration(&run.configuration_id)
+        .unwrap();
+    let version = f
+        .store
+        .connection_version(&config.connection_version)
+        .unwrap();
+    let mut changed = version.specification.clone();
+    let ConnectionSpec::AgentCli { egress_proxy, .. } = &mut changed else {
+        unreachable!()
+    };
+    *egress_proxy = Some(EgressProxy {
+        address: "10.0.0.1".into(),
+        port: 8080,
+    });
+    let updated = f
+        .store
+        .execute(
+            "new-proxy",
+            &Command::ConnectionUpdate {
+                id: version.connection_id,
+                revision: 1,
+                name: None,
+                specification: Some(changed),
+            },
+        )
+        .unwrap();
+    assert_ne!(updated["version"]["id"], version.id);
+    let context = f
+        .store
+        .runtime_context(
+            "service",
+            &run.task_id,
+            &run.worker_id,
+            &run.configuration_id,
+            &run.purpose,
+        )
+        .unwrap();
+    let resources = f
+        .store
+        .runtime_begin_cli_launch("service", &run.id, "fixture-engine", &context)
+        .unwrap();
+    assert_eq!(resources.egress_proxy, Some(route.clone()));
+    assert_eq!(
+        Store::open(f.dir.path())
+            .unwrap()
+            .cli_resources(&run.id)
+            .unwrap()
+            .unwrap()
+            .egress_proxy,
+        Some(route)
+    );
 }

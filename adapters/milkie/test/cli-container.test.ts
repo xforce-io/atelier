@@ -9,12 +9,15 @@ import { parseIsolation, parseLoginIsolation } from '../src/cli-container.js';
 test('isolation bootstrap cannot inject Docker options, mutable images or arbitrary egress',()=>{
   const value={runId:randomUUID(),workspaceId:randomUUID(),ownershipToken:randomUUID(),engineId:'engine',image:'sha256:'+'a'.repeat(64),nativeDirectory:'/native',ledgerDirectory:'/ledger',configDirectory:'/config',skillDirectory:'/skill',hosts:['example.com']};
   assert.equal(parseIsolation(value).runId,value.runId);
+  assert.deepEqual(parseIsolation({...value,upstream:{address:'192.168.5.2',port:9567}}).upstream,{address:'192.168.5.2',port:9567});
+  assert.throws(()=>parseIsolation({...value,upstream:{address:'192.168.5.2',port:9567,password:'secret'}}));
   for(const patch of [{image:'node:latest'},{hosts:['*']},{hosts:['127.0.0.1']},{nativeDirectory:'/source,target=/host'},{extraDockerArgs:['--privileged']},{runId:'../other'}]) assert.throws(()=>parseIsolation({...value,...patch}));
 });
 
 test('native login has a separate identity and cannot select host mounts or arbitrary command arguments',()=>{
   const value={loginId:randomUUID(),workspaceId:randomUUID(),ownershipToken:randomUUID(),engineId:'engine',image:'sha256:'+'a'.repeat(64),runtime:'pi',configDirectory:'/worker-login',hosts:['example.com']};
   assert.equal(parseLoginIsolation(value).runtime,'pi');
+  assert.deepEqual(parseLoginIsolation({...value,upstream:{address:'192.168.5.2',port:9567}}).upstream,{address:'192.168.5.2',port:9567});
   for(const patch of [{runId:randomUUID()},{runtime:'bash'},{command:['sh']},{model:'--version'},{configDirectory:'/a,target=/host'},{hosts:['*']}])assert.throws(()=>parseLoginIsolation({...value,...patch}));
 });
 test('real launcher rejects malformed private bootstrap without echoing its contents',async()=>{

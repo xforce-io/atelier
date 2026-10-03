@@ -63,9 +63,12 @@ macOS Keychain 和生产 API 服务已有真实 CLI/Node 启停及崩溃恢复�
 
 ## 出站代理与网络验证
 
-`egress-proxy.ts` 是 Atelier 拥有的受限 CONNECT 组件，不使用 milkie 未提交的 CLI 接口。`proxy-main.js` 只从私有 stdin 读取一次 `{listenHost, hosts}`，之后保持管道作为生命周期控制；listenHost 必须是本容器已有的具体 IPv4 地址。启动后只输出固定 listening 回执，控制管道关闭即退出。策略来自可信资源控制侧，不能由模型修改；错误不回显配置或正文。
+`egress-proxy.ts` 是 Atelier 拥有的受限 CONNECT 组件，不使用 milkie 未提交的 CLI 接口。`proxy-main.js` 只从私有 stdin 读取一次 `{listenHost, hosts, upstream?}`，之后保持管道作为生命周期控制；listenHost 必须是本容器已有的具体 IPv4 地址。启动后只输出固定 listening 回执，控制管道关闭即退出。策略来自可信资源控制侧，不能由模型修改；错误不回显配置或正文。
 
 精确 DNS 域名及 443 端口之外的 CONNECT 在解析前拒绝。每个 IPv4 DNS 答案都须为公开地址，选中的数值地址直接用于连接，不进行第二次解析；拒绝私网/回环/保留地址及混合答案。普通 HTTP 代理、IP 字面量、用户信息和含路径目标拒绝。该组件不解密 TLS，也不代替各 CLI 原生工具关闭和身份校验。
+
+agent-cli 连接可显式指定 `egress_proxy: {"address":"规范 IPv4 地址","port":端口}`；配置随连接版本冻结，可信启动器将其作为 `upstream` 传给出站代理。省略即直接连接已核验目标，不读取宿主 HTTP_PROXY/HTTPS_PROXY。固定上游支持无认证 HTTP CONNECT，允许私网基础设施地址，拒绝 URL、域名、回环、链路本地、保留地址及额外字段。向上游提交已核验的数值目标 IP，保持精确域名/443 和公开地址校验；认证要求、重定向、异常响应均失败，不回退直连。登录、诊断和执行共用此路由，成员容器不获得上游地址或宿主代理配置。
+
 
 单元与真实 TCP 集成包含策略、绕过形式、DNS 混合答案、数值地址固定、转发、关闭及配置脱敏。另显式执行：
 
@@ -73,7 +76,7 @@ macOS Keychain 和生产 API 服务已有真实 CLI/Node 启停及崩溃恢复�
 npm run test:isolation
 ```
 
-此检查需要已有固定井字棋检查镜像中的 Node（仅作为可信测试运行时）及 Docker，不安装或运行 agent CLI。它创建带唯一标签的临时内部网络（internal + inhibit_ipv4、IPv6 关闭）、双网络代理，以及真实宿主网络 TCP 对照服务：普通 bridge 能访问对照服务，内部容器不能访问网关、其它宿主地址、直接公网或外部 DNS；经代理只可访问批准的 example.com:443 并取得实际 HTTPS 回应，未批准目标拒绝。之后关闭控制管道、核对代理停止并清理本测试资源。原始证据保存在 `.agents/verify-runs/1/isolation-*.json`，包括代理代码摘要和明确的 cliExecution=false。
+此检查分别覆盖直接出站和显式上游代理两种路径；后一条使用真实 HTTP CONNECT 对照服务，额外核对目标为数值 IP、成员不能直连上游。此检查需要已有固定井字棋检查镜像中的 Node（仅作为可信测试运行时）及 Docker，不安装或运行 agent CLI。它创建带唯一标签的临时内部网络（internal + inhibit_ipv4、IPv6 关闭）、双网络代理，以及真实宿主网络 TCP 对照服务：普通 bridge 能访问对照服务，内部容器不能访问网关、其它宿主地址、直接公网或外部 DNS；经代理只可访问批准的 example.com:443 并取得实际 HTTPS 回应，未批准目标拒绝。之后关闭控制管道、核对代理停止并清理本测试资源。原始证据保存在 `.agents/verify-runs/1/isolation-*.json`，包括代理代码摘要和明确的 cliExecution=false。
 
 2026-10-02 再次核对 milkie 远端 main 仍为 `7865ffcc14a8359a055e5e6e0998b56ab2160379`，#263 未关闭且相邻工作区实现未提交；草稿仅有标准/只读原生工具模式，未提供本项目必需的受控工具回调及隔离启动入口。本组件不消费该草稿，也不私造原生 CLI 协议。CLI 镜像、Worker 专用登录、原生会话卷、Run 资源账本及完整执行接线仍需完成。
 

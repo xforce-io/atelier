@@ -27,15 +27,46 @@ export function targetHost(authority:string,allowed:ReadonlySet<string>):string|
   const match=/^([a-z0-9.-]+):443$/.exec(authority);
   return match && hostname(match[1]!) && allowed.has(match[1]!) ? match[1] : undefined;
 }
+export interface UpstreamProxy { address:string; port:number; }
+export function parseUpstreamProxy(value:unknown):UpstreamProxy {
+  if(!value||typeof value!=='object'||Array.isArray(value))throw new Error('invalid_upstream_proxy');
+  const p=value as Record<string,unknown>;
+  if(Object.keys(p).sort().join(',')!=='address,port'||typeof p.address!=='string'||isIP(p.address)!==4
+    ||typeof p.port!=='number'||!Number.isInteger(p.port)||p.port<1||p.port>65535)throw new Error('invalid_upstream_proxy');
+  const [a,b,c]=p.address.split('.').map(Number) as [number,number,number,number];
+  if(a===0||a===127||a>=224||a===169&&b===254||a===192&&(b===0||b===88&&c===99)
+    ||a===198&&(b===18||b===19||b===51&&c===100)||a===203&&b===0&&c===113)throw new Error('invalid_upstream_proxy');
+  return p as unknown as UpstreamProxy;
+}
 interface Dependencies {
   lookup(host:string):Promise<Array<{address:string}>>;
-  connect(address:string):Socket;
+  connect(address:string,upstream?:UpstreamProxy):Socket;
 }
 const production:Dependencies={
   lookup:host=>dnsLookup(host,{family:4,all:true,verbatim:true}),
-  connect:address=>tcpConnect({host:address,port:443,family:4}),
+  connect:(address,upstream)=>tcpConnect({host:upstream?.address??address,port:upstream?.port??443,family:4}),
 };
-export function createEgressProxy(hosts:ReadonlySet<string>,dependencies:Dependencies=production){
+/** CONNECT the already-vetted numeric target, never resolve it at the next hop.
+ * No authentication headers, redirects, ambient proxy settings, or fallback. */
+function tunnel(socket:Socket,address:string):Promise<void> {
+  return new Promise((resolve,reject)=>{
+    let buffer=Buffer.alloc(0);
+    const fail=()=>finish(new Error('upstream_tunnel_failed'));
+    const finish=(error?:Error)=>{socket.off('data',data);socket.off('error',fail);socket.off('close',fail);error?reject(error):resolve();};
+    const data=(chunk:Buffer)=>{
+      buffer=Buffer.concat([buffer,chunk]);
+      const end=buffer.indexOf('\r\n\r\n');
+      if(buffer.length>8192){fail();return;}
+      if(end<0)return;
+      if(!/^HTTP\/1\.[01] 200(?: [^\r\n]*)?\r\n/.test(buffer.subarray(0,end+2).toString('ascii'))){fail();return;}
+      socket.pause();if(buffer.length>end+4)socket.unshift(buffer.subarray(end+4));finish();
+    };
+    socket.on('data',data);socket.once('error',fail);socket.once('close',fail);
+    socket.write(`CONNECT ${address}:443 HTTP/1.1\r\nHost: ${address}:443\r\n\r\n`);
+  });
+}
+export function createEgressProxy(hosts:ReadonlySet<string>,dependencies:Dependencies=production,upstreamProxy?:UpstreamProxy){
+  const route=upstreamProxy===undefined?undefined:parseUpstreamProxy(upstreamProxy);
   const sockets=new Set<Duplex>();
   const server=createServer({maxHeaderSize:8192,headersTimeout:5000,requestTimeout:5000},(_req,res)=>{
     res.writeHead(405,{'Connection':'close','Content-Length':'0'});res.end();
@@ -50,7 +81,7 @@ export function createEgressProxy(hosts:ReadonlySet<string>,dependencies:Depende
   server.on('connect',(request,socket,head)=>{
     if(!(socket instanceof Socket)){socket.destroy();return;}
     const host=targetHost(request.url??'',hosts);
-    const deny=(code:number)=>socket.end(`HTTP/1.1 ${code} ${code===403?'Forbidden':'Bad Gateway'}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);
+    const deny=(code:number)=>{if(!socket.destroyed&&!socket.writableEnded)socket.end(`HTTP/1.1 ${code} ${code===403?'Forbidden':'Bad Gateway'}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`);};
     if(!host||head.length>65536){deny(403);return;}
     socket.pause();
     void (async()=>{
@@ -65,16 +96,19 @@ export function createEgressProxy(hosts:ReadonlySet<string>,dependencies:Depende
       // to resolve the hostname again (DNS rebinding must not bypass policy).
       if(addresses.length===0||addresses.length>32||addresses.some(a=>!publicIpv4(a.address))){deny(403);return;}
       let upstream:Socket;
-      try{upstream=dependencies.connect(addresses[0]!.address);}catch{deny(502);return;}
+      const address=addresses[0]!.address;
+      try{upstream=dependencies.connect(address,route);}catch{deny(502);return;}
       sockets.add(upstream);
       const deadline=setTimeout(()=>{socket.destroy();upstream.destroy();},15*60*1000);
       deadline.unref();
       upstream.setTimeout(5000,()=>upstream.destroy());
       let connected=false;
       socket.once('close',()=>upstream.destroy());
-      upstream.once('close',()=>{clearTimeout(deadline);sockets.delete(upstream);socket.destroy();});
+      upstream.once('close',()=>{clearTimeout(deadline);sockets.delete(upstream);if(connected)socket.destroy();else deny(502);});
       upstream.on('error',()=>{if(!connected&&!socket.destroyed)deny(502);else socket.destroy();});
       upstream.once('connect',()=>{
+        void (async()=>{
+        if(route)await tunnel(upstream,address);
         connected=true;
         if(socket.destroyed){upstream.destroy();return;}
         upstream.setTimeout(30000,()=>upstream.destroy());
@@ -82,6 +116,7 @@ export function createEgressProxy(hosts:ReadonlySet<string>,dependencies:Depende
         socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
         if(head.length)upstream.write(head);
         socket.pipe(upstream);upstream.pipe(socket);socket.resume();
+        })().catch(()=>{if(!socket.destroyed)deny(502);upstream.destroy();});
       });
     })().catch(()=>socket.destroy());
   });

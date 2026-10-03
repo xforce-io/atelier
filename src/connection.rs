@@ -15,6 +15,39 @@ pub enum ApiProtocol {
     OpenaiChatCompletions,
 }
 
+/// Explicit infrastructure endpoint, used only by the trusted egress proxy.
+/// No credentials, URL interpretation, DNS aliases or ambient environment.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct EgressProxy {
+    pub address: String,
+    pub port: u16,
+}
+impl EgressProxy {
+    pub fn validate(&self) -> Result<()> {
+        let ip = self
+            .address
+            .parse::<std::net::Ipv4Addr>()
+            .map_err(|_| Error::Invalid("网络代理须指定规范 IPv4 地址和非零端口".into()))?;
+        let [a, b, c, _] = ip.octets();
+        if ip.to_string() != self.address
+            || self.port == 0
+            || a == 0
+            || a == 127
+            || a >= 224
+            || a == 169 && b == 254
+            || a == 192 && (b == 0 || b == 88 && c == 99)
+            || a == 198 && (b == 18 || b == 19 || b == 51 && c == 100)
+            || a == 203 && b == 0 && c == 113
+        {
+            return Err(Error::Invalid(
+                "网络代理地址或端口不适用；不得指向回环、链路本地或保留地址".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "transport", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ConnectionSpec {
@@ -31,6 +64,8 @@ pub enum ConnectionSpec {
         // Adding/changing a policy creates a new immutable connection version.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         egress_hosts: Option<Vec<String>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        egress_proxy: Option<EgressProxy>,
     },
 }
 impl ConnectionSpec {
@@ -62,6 +97,7 @@ impl ConnectionSpec {
                 model,
                 image,
                 egress_hosts,
+                egress_proxy,
             } => {
                 text(runtime, "CLI runtime", 64)?;
                 if !runtime
@@ -78,6 +114,9 @@ impl ConnectionSpec {
                 }
                 if let Some(hosts) = egress_hosts {
                     validate_egress_hosts(hosts)?;
+                }
+                if let Some(proxy) = egress_proxy {
+                    proxy.validate()?;
                 }
             }
         }

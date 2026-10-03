@@ -400,6 +400,7 @@ mod tests {
                         model: None,
                         image: Some(format!("sha256:{}", "a".repeat(64))),
                         egress_hosts: Some(vec!["example.com".into()]),
+                        egress_proxy: None,
                     },
                 },
             )

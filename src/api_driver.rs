@@ -92,6 +92,7 @@ async fn prepare(
             model,
             image: Some(_),
             egress_hosts: Some(_),
+            ..
         } => {
             let entry = entry_root.join("cli-container-main.js");
             if !entry.is_file() {

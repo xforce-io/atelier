@@ -244,6 +244,7 @@ async fn perform(
         runtime,
         model,
         egress_hosts: Some(hosts),
+        egress_proxy,
         ..
     } = &version.specification
     else {
@@ -287,9 +288,12 @@ async fn perform(
         crate::execution_context::private_directory(&directory.join(name), true)?;
     }
     let resources = record.resources.as_ref().expect("registered resources");
-    let payload = json!({"isolation":{"runId":record.id,"workspaceId":resources.workspace_id,"ownershipToken":resources.ownership_token,"engineId":engine,"image":image,"hosts":hosts,
+    let mut payload = json!({"isolation":{"runId":record.id,"workspaceId":resources.workspace_id,"ownershipToken":resources.ownership_token,"engineId":engine,"image":image,"hosts":hosts,
         "nativeDirectory":directory.join("native"),"ledgerDirectory":directory.join("ledger"),"skillDirectory":directory.join("skill"),"configDirectory":environment.directory(&store.workspace_path).join("login")},
         "diagnostic":{"runtime":runtime,"model":model,"challenge":new_id()}});
+    if let Some(proxy) = egress_proxy {
+        payload["isolation"]["upstream"] = json!(proxy);
+    }
     let mut command = tokio::process::Command::new("node");
     command.env_clear();
     for name in [
@@ -422,6 +426,7 @@ mod tests {
                         model: None,
                         image: Some(format!("sha256:{}", "a".repeat(64))),
                         egress_hosts: Some(vec!["example.com".into()]),
+                        egress_proxy: None,
                     },
                 },
             )

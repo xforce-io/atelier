@@ -3,13 +3,14 @@ import { promisify } from 'node:util';
 import { promises as fs } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { isIP } from 'node:net';
-import { policyHosts } from './egress-proxy.js';
+import { policyHosts, parseUpstreamProxy, type UpstreamProxy } from './egress-proxy.js';
 import { milkieCommit } from './channel.js';
 
 const exec = promisify(execFile);
 const entry = '/opt/atelier/adapter/dist/src/';
 interface ResourceOptions {
   workspaceId: string; ownershipToken: string; engineId: string; image: string; hosts: string[];
+  upstream?:UpstreamProxy;
 }
 export interface Isolation extends ResourceOptions {
   runId: string;
@@ -22,7 +23,8 @@ export function parseIsolation(value: unknown): Isolation {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalid();
   const p = value as Record<string, unknown>;
   const fields = ['runId','workspaceId','ownershipToken','engineId','image','nativeDirectory','ledgerDirectory','configDirectory','skillDirectory','hosts'];
-  if (Object.keys(p).sort().join(',') !== fields.sort().join(',')) throw invalid();
+  if (Object.keys(p).filter(k=>k!=='upstream').sort().join(',') !== fields.sort().join(',')) throw invalid();
+  if(p.upstream!==undefined)parseUpstreamProxy(p.upstream);
   for (const key of ['runId','workspaceId','ownershipToken']) if (typeof p[key] !== 'string' || !/^[0-9a-f-]{36}$/.test(p[key] as string)) throw invalid();
   if (typeof p.engineId !== 'string' || !/^[a-zA-Z0-9:-]{1,128}$/.test(p.engineId)) throw invalid();
   if (typeof p.image !== 'string' || !/^(?:[a-zA-Z0-9./:_-]+@)?sha256:[a-f0-9]{64}$/.test(p.image)) throw invalid();
@@ -35,11 +37,11 @@ export function parseIsolation(value: unknown): Isolation {
 export function parseLoginIsolation(value:unknown):LoginIsolation {
   if(!value||typeof value!=='object'||Array.isArray(value))throw invalid();
   const p=value as Record<string,unknown>;
-  const keys=['loginId','workspaceId','ownershipToken','engineId','image','hosts','runtime','configDirectory','model'];
+  const keys=['loginId','workspaceId','ownershipToken','engineId','image','hosts','runtime','configDirectory','model','upstream'];
   if(Object.keys(p).some(key=>!keys.includes(key))||!['pi','grok-cli'].includes(p.runtime as string)
     ||(p.model!==undefined&&(typeof p.model!=='string'||!p.model.trim()||p.model.startsWith('-')||p.model.length>256)))throw invalid();
   parseIsolation({runId:p.loginId,workspaceId:p.workspaceId,ownershipToken:p.ownershipToken,engineId:p.engineId,image:p.image,hosts:p.hosts,
-    nativeDirectory:p.configDirectory,ledgerDirectory:p.configDirectory,configDirectory:p.configDirectory,skillDirectory:p.configDirectory});
+    nativeDirectory:p.configDirectory,ledgerDirectory:p.configDirectory,configDirectory:p.configDirectory,skillDirectory:p.configDirectory,...(p.upstream!==undefined?{upstream:p.upstream}:{})});
   return p as unknown as LoginIsolation;
 }
 function environment(): NodeJS.ProcessEnv {
@@ -113,7 +115,7 @@ async function createProxy(o:ResourceOptions,id:string,kind:'run'|'login'|'probe
       if (!address) await new Promise(resolve=>setTimeout(resolve,25));
     }
     if (isIP(address)!==4) throw new Error('cli_proxy_address_missing');
-    proxy.stdin.write(JSON.stringify({listenHost:address,hosts:o.hosts})+'\n');
+    proxy.stdin.write(JSON.stringify({listenHost:address,hosts:o.hosts,...(o.upstream?{upstream:o.upstream}:{})})+'\n');
     await listening;
     return {proxy,address,executionName,inner,labels,common};
   } catch(error) {proxy.stdin.destroy();proxy.kill();throw error;}

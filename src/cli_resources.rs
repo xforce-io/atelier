@@ -28,6 +28,8 @@ pub struct CliResources {
     pub image: String,
     #[serde(default)]
     pub egress_hosts: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub egress_proxy: Option<crate::connection::EgressProxy>,
     #[serde(default)]
     pub context_id: Option<String>,
     #[serde(default)]
@@ -174,6 +176,7 @@ impl Store {
         let ConnectionSpec::AgentCli {
             image: Some(image),
             egress_hosts,
+            egress_proxy,
             ..
         } = version.specification
         else {
@@ -217,6 +220,7 @@ impl Store {
             egress_network: format!("atelier-outer-{}", run.id),
             image,
             egress_hosts: egress_hosts.unwrap_or_default(),
+            egress_proxy,
             context_id: native.map(|context| context.id),
             resume: context.map(|context| context.used),
             login_generation,

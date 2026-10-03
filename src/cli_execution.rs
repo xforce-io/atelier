@@ -87,9 +87,13 @@ pub(crate) fn bootstrap(
     skill: &Path,
 ) -> Value {
     let (native, ledger) = context.directories(workspace);
-    json!({"runId":resources.run_id,"workspaceId":resources.workspace_id,"ownershipToken":resources.ownership_token,
+    let mut bootstrap = json!({"runId":resources.run_id,"workspaceId":resources.workspace_id,"ownershipToken":resources.ownership_token,
         "engineId":resources.engine_id,"image":resources.image,"hosts":resources.egress_hosts,
-        "nativeDirectory":native,"ledgerDirectory":ledger,"configDirectory":prepared.environment.directory(workspace).join("login"),"skillDirectory":skill})
+        "nativeDirectory":native,"ledgerDirectory":ledger,"configDirectory":prepared.environment.directory(workspace).join("login"),"skillDirectory":skill});
+    if let Some(proxy) = &resources.egress_proxy {
+        bootstrap["upstream"] = json!(proxy);
+    }
+    bootstrap
 }
 
 /// Every mounted file is generated from the installed core tool catalogue.
