@@ -497,3 +497,18 @@ CLI readiness 改按当前 Worker 展示在 `workerReadiness`，连接级别不�
 实际 CLI/PTY/SQLite/Docker/milkie 联合测试通过：先缺登录失败，专用登录后完成诊断，原请求重放，强杀诊断客户端后离线核对，继续运行服务的消息投递/续接/跨投递核对及停服清理。证据 `.agents/verify-runs/1/cli-runtime-d22cc024-3615-4856-978c-1654add2b27f.json`；生产基础镜像为 `sha256:7f1ee0455ce24eabd91b1c09d2460538b190c49b24ab7ae6c0afa0dfd8bfbf66`。登录和 Pi 进程为明确替身，nativeCli=false/model=false；该检查不证明真实模型或完整 Story 通过。
 
 剩余主路径：真实 API/Pi/Grok 认证、工具行为和原生续接，Grok #270 实际容器心跳复测，CLI 与产品 Skill 的完整游戏团队路径及全部 L1.8 验收，随后独立审查、CI、PR 与合入。所有必需项保持原范围。
+
+
+## 2026-10-03：真实原生 CLI 登录联调与网络缺口
+
+L1: reuse v0.10；L2: reuse v0.17。按 verify-atelier 的真实入口路径在独立开发工作区建立 Pi/Grok 连接和 Worker，显式 prepare/login/test；未冻结候选、未标 Story 通过。没有复制宿主登录材料或会话；仅参考本机非秘密的默认模型选择。
+
+真实 Grok 1.0.46 首次拒绝同时传入 `--oauth --device-auth`。此前登录替身也错误接受了这个组合，模拟回归未覆盖原生参数互斥。已改为 `grok login --device-auth` 并同步替身约束；重新从产品入口启动后已进入真实设备认证请求，参数错误消失。实际 CLI/PTY/Docker 登录管理回归通过，证据 `.agents/verify-runs/1/cli-login-5d99ec69-feff-40e3-aced-c2fdade5f89d.json`；其中认证程序仍为明确替身，仅证明管理流程。
+
+真实 Pi 0.85.1 已进入交互界面并选择 OpenAI Codex 设备认证。Grok 的真实请求在连接 auth.x.ai 时失败；Pi 的请求收到 HTTP 403 / unsupported_country_region_territory。均未完成认证、未取得真实模型成功。Pi 退出时因原生程序创建 auth.json 且正常退出，管理记录为 login_material_saved_unchecked；随后的实际 connection test 正确返回 cli_native_failed，没有将文件存在当作可用认证。
+
+网络对照：本机直连 Grok 认证地址超时，使用已配置的本机 HTTP 代理返回 HTTP 200；在该代理上固定解析出的数值目标地址同样返回 HTTP 200。当前受控出站代理只实现直接 TCP 出站，尚未提供显式的上游网络代理配置，因而隔离容器不具备与本机 CLI 相同的网络路径。下一步应在冻结连接配置中明确此网络路径，并继续由受控出站代理限制精确域名/443、验证公开地址和固定目标 IP；不能把宿主代理环境变量直接交给成员容器来绕过约束。
+
+本轮生产镜像重新构建为 `sha256:3173ff5f9c70007aab51590d662c86a886e902fa2483457353d7cf6628122f3a`。真实认证尝试、返回类别与资源核对记录在 `.agents/verify-runs/1/native-cli-auth-20261003.json`；本次所属容器及网络均已清理。专用工作区保留连接、成员及失败历史供继续修复；不保留登录终端全文，不含认证成功或业务产出声明。
+
+milkie #270 仍 OPEN，未进行已认证的 Grok 执行，不能判其心跳问题解决。当前 API 配置仍为此前 glm-latest/coding 端点，已询问用户订阅是否修复或改用何连接；未盲目重复失败请求。下一步仍是显式网络路径、真实认证和模型工具/续接，再完成两条入口的完整游戏团队与全部 58 项验收，之后独立审查、CI、PR 与合入。

@@ -158,7 +158,7 @@ export async function prepareLoginContainer(options:LoginIsolation,signal:AbortS
   const {uid,gid}=metadata;
   const {proxy,address,executionName,inner,labels,common}=await createProxy(o,o.loginId,'login',uid,gid,signal);
   try {
-    const command=o.runtime==='grok-cli'?['grok','login','--oauth','--device-auth']:
+    const command=o.runtime==='grok-cli'?['grok','login','--device-auth']:
       ['pi','--no-tools','--no-builtin-tools','--no-extensions','--no-skills','--no-prompt-templates','--no-themes','--no-context-files','--offline',...(o.model?['--model',o.model]:[])];
     await docker(['create','-it','--name',executionName,'--network',inner,...labels,...common,'--cpus','2','--memory','2g','--pids-limit','128',
       '--tmpfs',`/tmp:rw,noexec,nosuid,size=67108864,uid=${uid},gid=${gid},mode=700`,'--workdir','/tmp',
