@@ -563,3 +563,14 @@ L1: reuse v0.10；L2: v0.19（纯技术边界补充）。Pi 执行成员和独�
 开发回归：56 项 TypeScript、150 项 Rust（14 Unit + 19 CLI + 117 core）通过，11 项环境测试默认 ignored；格式、Clippy 通过。镜像重建为 `sha256:f2a0d78b55cb5b3afdff90887582f0baecec23d3eb321947a8712ac8ea2346eb`。新镜像须使用新冻结执行配置，不覆盖旧任务绑定；旧认证成功不能替代新配置的 prepare/login/test。完整服务联合测试与修复后的原生团队路径另记结果。API 仍为 provider_rejected；CLI 与 Skill 全部 L1.8、独立审查和合入尚未完成。
 
 实际 CLI/PTY/SQLite/Docker/milkie 联合回归通过，证据 `.agents/verify-runs/1/cli-runtime-7ffa8b69-4067-4442-b5fd-d8f3430c4ce6.json`。新增核对 `run show` 保存 completed terminal、资源停止和可见停止原因；同一测试继续覆盖诊断客户端崩溃核对、跨消息原生续接与只读恢复、任务隔离和停服清理。该测试明确使用登录/Pi 协议替身，nativeCli=false/model=false。
+
+
+## 2026-10-03：修复候选 CI、网络恢复与真实宿主入口
+
+提交 `6526031` 的 CI `37124736634` 已通过，证据 `.agents/verify-runs/1/ci-37124736634.json`。同时只读核对生产镜像的 36 个接入文件与当前构建逐文件 SHA-256 相同，证据 `fixed-tools-image-provenance-20261003.json`；镜像一致性不代表原生验收通过。
+
+修复后的新成员配置首次登录被当前网络的 Fake-IP DNS 拒绝。没有放宽公网目标校验、修改系统代理设置或复制凭据；只读排查后，认证域名的实际解析恢复为公网地址，上游仍可连接。独立 Grok 检验成员再次经用户授权完成新环境登录，并通过真实模型随机工具挑战，资源已回收；证据 `fixed-tools-grok-success-20261003.json`。Pi 新环境已进入设备认证，当前等待用户完成授权；不能沿用旧镜像的诊断结果。
+
+在实际 Codex 会话中通过 `skill install` 安装并读取产品入口，按 `skill describe --protocol 2` 读取本人身份、团队及任务权限。经真实 CLI 取消旧镜像失败任务并保留历史，再提交相同井字棋目标、固定输入和检查契约的新 pending Task；没有代数字负责人承接或安排。证据 `fixed-tools-skill-game-setup-20261003.json`，completeSkillAcceptance=false：本次仅证明该宿主已加载入口并实际创建/配置任务，未覆盖从空工作区组队、退出宿主、完整交付或正式人类验收。
+
+真实入口检查发现 setup 操作索引遗漏 connection login，且仍含“完整 CLI 接入仍须实现”的旧说明。现改为 prepare/login/test 的实际流程，并明确准备或登录成功不等于成员模型检查通过。仅更新产品指导文字，不改变权限、命令行为或冻结执行镜像。
