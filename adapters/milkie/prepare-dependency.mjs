@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { gunzipSync, gzipSync } from 'node:zlib';
 
 // NPM 0.1.1 predates the required tool allowlist. Build an immutable committed
 // source snapshot; never build or alter a neighboring developer's dirty tree.
@@ -29,12 +30,17 @@ try {
   run('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], { cwd: build });
   run('npm', ['run', 'build'], { cwd: build });
   const packed = JSON.parse(run('npm', ['pack', '--ignore-scripts', '--json'], { cwd: build }).toString())[0];
-  const artifact = readFileSync(join(build, packed.filename));
+  // npm's tar bytes are reproducible, but compressed bytes differ between the
+  // official Node build and Homebrew's zlib. Stored DEFLATE blocks preserve the
+  // exact tar while producing a portable artifact for npm's integrity check.
+  const tar = gunzipSync(readFileSync(join(build, packed.filename)));
+  const artifact = gzipSync(tar, { level: 0 });
   const sha256 = createHash('sha256').update(artifact).digest('hex');
+  const tarSha256 = createHash('sha256').update(tar).digest('hex');
   const filename = `milkie-${revision}.tgz`;
-  renameSync(join(build, packed.filename), join(root, 'vendor', filename));
-  writeFileSync(join(root, 'vendor', 'provenance.json'), JSON.stringify({ revision, filename, sha256, source: 'committed Git snapshot; local changes excluded' }, null, 2) + '\n');
-  process.stdout.write(JSON.stringify({ revision, filename, sha256 }) + '\n');
+  writeFileSync(join(root, 'vendor', filename), artifact);
+  writeFileSync(join(root, 'vendor', 'provenance.json'), JSON.stringify({ revision, filename, sha256, tarSha256, source: 'committed Git snapshot; local changes excluded' }, null, 2) + '\n');
+  process.stdout.write(JSON.stringify({ revision, filename, sha256, tarSha256 }) + '\n');
 } finally {
   rmSync(build, { recursive: true, force: true });
 }

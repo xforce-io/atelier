@@ -18,6 +18,8 @@ npm test
 
 已在 macOS、Node 23.11.0 / npm 10.9.2 下连续构建两次，包 SHA-256 均为 `6a4de9e52702ebc2b511b68af810743637d29817b17fa41090f7186267a88eec`；原始来源记录保存在 vendor/provenance.json。其他平台/工具链的构建与完整性需再验证。该本地源码包不是新的上游发行版本。
 
+2026-10-03 的干净 CI 发现官方 Node 与 Homebrew Node 对同一 tar 的 gzip 压缩结果不同，导致原 npm integrity 拒绝安装。当前准备脚本保持 npm 产出的 tar 原样，用无压缩 DEFLATE 统一 gzip 编码，同时记录包摘要和 tar 摘要；锁文件继续严格校验，不在 CI 动态改锁。固定 e049f0b 的 tar SHA-256 为 `03f8f60950ac5e071fe8bd42b766e044e476633aa8b802cfc96c2a76796e037d`，标准化包 SHA-256 为 `2f025c8d7f9f75d6f4e693d9e8088b469dd325cf5c8b95e6a4c38cc506e013a9`。这次只改变压缩编码，依赖文件内容不变。
+
 ## 执行边界
 
 `executeApiTurn` 接收可信核心装配的身份、上下文、Skill、模型和工具表；不接受模型自选身份。API 使用 milkie AgentRuntime，全部内置工具关闭，不装配 subagent、宿主 shell 或动态 Skill。工具只通过 milkie 的实际派发校验后进入核心回调；伪造工具名不会绕过派发边界。

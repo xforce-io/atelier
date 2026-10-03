@@ -536,3 +536,6 @@ agent-cli 新增可选 egress_proxy，以固定 IPv4 和端口表达无认证 HT
 沿用 L1 v0.10 / L2 v0.18。新增 GitHub Actions 基础检查，在 macOS 固定 Node 23.11.0、Rust 1.91.1 和 milkie e049f0b；检出公开上游的固定快照并按现有脚本构建包，npm lock 校验包完整性，先构建和测试 TypeScript，再运行 Rust 格式、Clippy 与全目标测试。工作流只读仓库权限，不持久保存 checkout 凭据，不配置提供商秘密。CI 运行结果另记，不因文件存在宣称通过。
 
 CI 不执行默认 ignored 的真实 Keychain/Docker 环境测试，也不替代原生模型和 CLI/Skill 全团队验收。原生 Grok 设备认证进程本轮核对仍在等待授权；Pi 同工作区并发登录被既有环境互斥拒绝，没有启动第二次原生认证，须待 Grok 完成或结束后继续。
+
+
+基础 CI 首次运行 `37108533107` 在 npm ci 被 EINTEGRITY 拒绝，Rust 检查未执行。第二次 `37108717165` 复现并保存公开依赖包用于比较。对 CI 与本地产物逐文件和完整解压 tar 核对：tar 都为 1,965,568 字节，SHA-256 均为 `03f8f60950ac5e071fe8bd42b766e044e476633aa8b802cfc96c2a76796e037d`，仅 gzip 编码不同。准备脚本现保留 tar 原样，以无压缩 DEFLATE 固定 gzip，并同时记录 tar/包摘要；只更新该本地依赖的 lock integrity，不改变上游文件、依赖版本或放宽校验。标准化包为 1,965,881 字节，包 SHA-256 为 `2f025c8d7f9f75d6f4e693d9e8088b469dd325cf5c8b95e6a4c38cc506e013a9`。修复后的 CI 结果待运行，不能把此前失败写为通过。
