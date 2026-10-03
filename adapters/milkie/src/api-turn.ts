@@ -107,6 +107,10 @@ export async function executeApiTurn(turn: ApiTurn): Promise<{ result: AgentResu
       config: {
         agentId:turn.workerId, version:'atelier-api-v1', systemPrompt:turn.skill,
         model:turn.model, builtinTools:{allow:[]},
+        // The real role catalogue includes Chinese guidance and full schemas.
+        // Allocate control within the unchanged 32 KiB conservative total;
+        // never truncate authority guidance or remove schema constraints.
+        contextBudget:{maxInputTokens:32768,regionCaps:{control:24576}},
         fsm:{states:[{name:'work',type:'llm',tools:names,max_iterations:50}],max_tool_calls:100},
       },
       goal:turn.goal,input,contextId:turn.contextId,agentRunId:turn.runId,

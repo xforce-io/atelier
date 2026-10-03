@@ -388,10 +388,13 @@ async fn execute(
     let owner = epoch.to_string();
     let id = run.id.clone();
     let terminal = channel_result.ok();
-    let reason = if terminal.is_some() {
-        "API 接入已停止并回收，成员操作已排空"
-    } else {
-        "API 接入失败；子进程已回收，成员操作已排空"
+    let reason = match terminal.as_ref() {
+        Some(t) => format!(
+            "API 执行结束：{}（{}）；资源已回收，成员操作已排空",
+            t.stop_reason,
+            t.stop_code.as_deref().unwrap_or(&t.native_stop_reason)
+        ),
+        None => "API 通道失败；子进程已回收，成员操作已排空".into(),
     };
     client.call(move |store| {
         crate::runs::service(&store.connection, &owner, false)?;
@@ -399,7 +402,7 @@ async fn execute(
             rusqlite::params![id, serde_json::to_string(&terminal)?])?;
         Ok(())
     }).await?;
-    finish(client, epoch, run, reason).await
+    finish(client, epoch, run, &reason).await
 }
 
 async fn process_table() -> Result<String> {

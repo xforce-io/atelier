@@ -9794,7 +9794,7 @@ const CLI_RESOURCE_IMAGE: &str =
     "sha256:7a87e3fe2909d0135d9041760b2808e70b9d2afb368e450e01d96b614665d133";
 
 #[test]
-fn actual_core_role_catalogues_start_in_real_cli_sdk() {
+fn actual_core_role_catalogues_start_in_real_api_and_cli_sdk() {
     use std::{
         io::Write,
         process::{Command, Stdio},

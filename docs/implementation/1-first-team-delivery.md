@@ -585,3 +585,14 @@ L1: reuse v0.10；L2: v0.19（纯技术边界补充）。Pi 执行成员和独�
 Grok 团队负责人分别处理执行结果和检验结果，通过原生上下文续接创建本人验收待办 `cdf64455-d53c-47d0-b815-a8e7140e1370`。实际产品导出后逐文件摘要匹配；Ego 浏览器以 file URL 打开同一版本、关闭网络，通过实际点击完成对角线胜利、平局及各自重开。用户在展示当前固定版本与依据后明确回复“接受这次小游戏交付”。产品 Skill 按请求修订 1、任务修订 3 提交接受并保存脱敏 decision-ref；独立进程查询确认请求 accepted、Task closed/outcome=accepted、任务修订 4，activeRuns=0、queuedDeliveries=0，未发布。
 
 证据：`.agents/verify-runs/1/fixed-tools-game-observations-20261003.jsonl`、`fixed-tools-game-result-20261003.json`、`game-browser-4b092657.json`、`game-4b092657.png`。这些是当前真实链路的开发证据，不汇总任何 Story 为全部通过：本轮未退出 Codex 宿主，缺少独立 CLI/Skill 两套完整任务及从空工作区的 Skill 路径；Pi 首次交接前修复缺陷，未覆盖独立失败后的返工；API 仍无成功业务执行，其余权限/异常子项、独立审查和合入仍须完成。
+
+
+## 2026-10-03：两种 CLI 职责交换与 DeepSeek API 真实接入修复
+
+在 `bc63083` 上用独立 Task `badc2940…` 交换既有 Worker 职责：Grok 执行、Pi 检验，原 Grok 团队负责人继续协调。Grok 修改并直接交接固定产出 `245ebf97…`，Pi 独立检查 19/19 通过，负责人保存人类验收请求 `4d39c2f9…`。该任务尚未得到当前人类验收；上一任务的接受不能沿用。新任务使用新职责快照，已接受旧任务的职责、说明与配置保持原冻结值。证据 `role-swap-game-observations-20261003.jsonl`；这不是完整 S1/S2/S3/S7 通过。
+
+用户指定使用本机 DEEPSEEK_API_BASE / DEEPSEEK_API_KEY 后，只通过私有 stdin 写入 Keychain；提供商模型清单实际返回 deepseek-flash、deepseek-v4-pro，后者在两个工作区分别通过真实产品 connection test。实际 Codex 宿主沿已加载产品 Skill，在新空工作区按 describe 初始化、创建本人/三名 API 数字员工、显式授权、固定输入/检查及提交游戏任务。未由宿主代成员作阶段决定。
+
+首次 API 团队负责人 Run 在调用模型前被 milkie 上下文预算拒绝：控制区默认 8192，而完整系统指导与工具定义估算为 16283。保留失败 Run、原投递及恢复事项；未把连接检查成功写成业务成功。修复显式将控制区分配为 24576，总输入保守上限仍为 32768，其它区域保持默认；不删减 schema 或指导，不放开总量检查。L1 v0.10 不变，L2 v0.20 明确该契约。API 停止原因现在保留执行终态/错误码，与实际资源回收分别展示。
+
+核心实际生成的三种职责目录现同时经过真实 API Runtime 与 CLI SDK，工具往返和完整指导/目录可见性通过；原生模型为 fixture，不能替代实际 DeepSeek 业务执行。57 项 TypeScript、150 项 Rust（14 Unit、19 CLI、117 core）通过，11 项环境测试默认 ignored；格式与 Clippy 通过。新增超大必需指导测试确认调用模型前仍失败。真实 API 恢复、成员交付及最终验收结果另记；目前保留全部剩余 58 项标准及独立审查/合入要求。

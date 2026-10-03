@@ -1,6 +1,6 @@
 # 功能地图
 
-Issue #1：异步团队、CLI 与产品 Atelier Skill，L1 v0.10 / L2 v0.19；基础 CLI、Worker 专用准备与登录管理及 CLI 运行服务接线、Worker 专用连接检查已有实现，三名原生 CLI 成员的专用认证和模型工具诊断已通过，真实 Pi 执行、Grok 独立检验及数字负责人发起人类验收已贯通，该游戏已获人类明确接受，完整验收仍未完成，全部 Story 尚未验收通过。[实现记录](../../../../docs/implementation/1-first-team-delivery.md) 区分已有集成测试与未运行的完整验收。旧前台流程证据不证明消息协作通过。
+Issue #1：异步团队、CLI 与产品 Atelier Skill，L1 v0.10 / L2 v0.20；基础 CLI、Worker 专用准备与登录管理及 CLI 运行服务接线、Worker 专用连接检查已有实现，三名原生 CLI 成员的专用认证和模型工具诊断已通过，真实 Pi 执行、Grok 独立检验及数字负责人发起人类验收已贯通，该游戏已获人类明确接受，完整验收仍未完成，全部 Story 尚未验收通过。[实现记录](../../../../docs/implementation/1-first-team-delivery.md) 区分已有集成测试与未运行的完整验收。旧前台流程证据不证明消息协作通过。
 
 | 文件 | L1.8 | 真实入口 |
 |---|---|---|

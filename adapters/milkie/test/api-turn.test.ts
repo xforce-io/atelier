@@ -201,3 +201,16 @@ test('API recovery from another delivery reaches native input without executing 
     assert.equal((await ToolLedger.openDelivery(root,'later-delivery')).foreignRecovery.length,0);
   }finally{await rm(directory,{recursive:true,force:true});}
 });
+
+test('oversized required API guidance still stops before any model or tool call',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'atelier-api-budget-'));
+  try {
+    const gateway=new Gateway([]);
+    const opts=options(directory,gateway,async()=>{throw new Error('must_not_forward');});
+    opts.skill='权限边界'.repeat(4096);
+    const result=await executeApiTurn(opts);
+    assert.equal(result.stopCode,'CONTEXT_BUDGET_REQUIRED_REGION_EXCEEDED');
+    assert.equal(gateway.requests.length,0);
+    assert.equal(result.result.status,'error');
+  } finally {await rm(directory,{recursive:true,force:true});}
+});
