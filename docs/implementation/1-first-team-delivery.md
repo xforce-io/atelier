@@ -574,3 +574,14 @@ L1: reuse v0.10；L2: v0.19（纯技术边界补充）。Pi 执行成员和独�
 在实际 Codex 会话中通过 `skill install` 安装并读取产品入口，按 `skill describe --protocol 2` 读取本人身份、团队及任务权限。经真实 CLI 取消旧镜像失败任务并保留历史，再提交相同井字棋目标、固定输入和检查契约的新 pending Task；没有代数字负责人承接或安排。证据 `fixed-tools-skill-game-setup-20261003.json`，completeSkillAcceptance=false：本次仅证明该宿主已加载入口并实际创建/配置任务，未覆盖从空工作区组队、退出宿主、完整交付或正式人类验收。
 
 真实入口检查发现 setup 操作索引遗漏 connection login，且仍含“完整 CLI 接入仍须实现”的旧说明。现改为 prepare/login/test 的实际流程，并明确准备或登录成功不等于成员模型检查通过。仅更新产品指导文字，不改变权限、命令行为或冻结执行镜像。
+
+
+## 2026-10-03：真实 Pi/Grok 团队首次完成游戏交付与人类验收
+
+软件候选 `60437b06db0e07fb65c53156c0628b786596a8dd`，L1 v0.10 / L2 v0.19。Pi 新环境登录代次 3 成功并通过真实工具诊断；Grok 独立检验成员的新镜像检查通过，团队负责人保留的旧冻结配置也经显式版本检查通过。随后由实际产品 Skill 宿主启动运行服务，未代数字员工承接、安排、修改候选、交接或提交检验。
+
+真实任务 `fec018c7-6072-4b9c-b972-82f001420a60` 修订 3：Grok 团队负责人自行承接并安排 Pi；Pi 经受控文件工具修复两条对角线漏判、更新中文说明，自测 19/19 通过后提交并直接交接。核心核对执行资源停止，固定非 partial 产出 `4b092657a2e9b276863b67976a063cbbc287f7c0c5896bc9769084820b1a481d`，内容摘要 `995d5a7dc3a44baf41d0d0acfbab5021d066cf345e2b658a2781512dc3169557`。独立 Grok 成员接受交接，针对该版本重新运行冻结检查，19/19 通过并提交检验 `803d50e8-c52c-4fc4-aa2f-591158b5ad4f`；没有以自测替代独立检查。
+
+Grok 团队负责人分别处理执行结果和检验结果，通过原生上下文续接创建本人验收待办 `cdf64455-d53c-47d0-b815-a8e7140e1370`。实际产品导出后逐文件摘要匹配；Ego 浏览器以 file URL 打开同一版本、关闭网络，通过实际点击完成对角线胜利、平局及各自重开。用户在展示当前固定版本与依据后明确回复“接受这次小游戏交付”。产品 Skill 按请求修订 1、任务修订 3 提交接受并保存脱敏 decision-ref；独立进程查询确认请求 accepted、Task closed/outcome=accepted、任务修订 4，activeRuns=0、queuedDeliveries=0，未发布。
+
+证据：`.agents/verify-runs/1/fixed-tools-game-observations-20261003.jsonl`、`fixed-tools-game-result-20261003.json`、`game-browser-4b092657.json`、`game-4b092657.png`。这些是当前真实链路的开发证据，不汇总任何 Story 为全部通过：本轮未退出 Codex 宿主，缺少独立 CLI/Skill 两套完整任务及从空工作区的 Skill 路径；Pi 首次交接前修复缺陷，未覆盖独立失败后的返工；API 仍无成功业务执行，其余权限/异常子项、独立审查和合入仍须完成。
