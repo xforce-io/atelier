@@ -214,3 +214,22 @@ test('oversized required API guidance still stops before any model or tool call'
     assert.equal(result.result.status,'error');
   } finally {await rm(directory,{recursive:true,force:true});}
 });
+
+test('API code work retains a normal file read and edit exchange within its finite input budget',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'atelier-api-file-exchange-'));
+  try {
+    const file='<!-- 双人井字棋：落子、判胜与重新开始。 -->\n'.repeat(180);
+    const gateway=new Gateway([call('read','read_file',{path:'index.html'}),call('write','write_file',{path:'index.html',content:file+'<!-- 已检查 -->'}),done()]);
+    const opts=options(directory,gateway,async operation=>operation.name==='read_file'?{ok:true,data:{path:'index.html',content:file,revision:1}}:{ok:true,data:{path:'index.html',revision:2}});
+    opts.skill='必须按当前任务职责与权限处理消息，不以执行结束冒充验收。'.repeat(70);
+    opts.tools=[{name:'read_file',description:'读取当前候选文件',inputSchema:{type:'object',properties:{path:{type:'string'}},required:['path'],additionalProperties:false}},{name:'write_file',description:'修改当前候选文件',inputSchema:{type:'object',properties:{path:{type:'string'},content:{type:'string'}},required:['path','content'],additionalProperties:false}}];
+    const result=await executeApiTurn(opts);
+    assert.equal(result.result.status,'completed');
+    assert.equal(gateway.requests.length,3);
+    const blocks=gateway.requests[1]!.messages.flatMap(message=>message.content);
+    const resultBlock=blocks.find(block=>block.type==='tool_result');
+    assert.ok(resultBlock?.type==='tool_result');
+    assert.equal(JSON.parse(resultBlock.content).data.content,file,'file contents reach the model intact');
+    assert.ok(gateway.requests.every(request=>Buffer.byteLength(JSON.stringify(request),'utf8')<=65536));
+  } finally {await rm(directory,{recursive:true,force:true});}
+});

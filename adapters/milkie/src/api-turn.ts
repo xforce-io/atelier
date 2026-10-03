@@ -82,6 +82,9 @@ export async function executeApiTurn(turn: ApiTurn): Promise<{ result: AgentResu
   const tools: ToolDefinition[] = turn.tools.map(tool => ({
     ...tool,
     parallelSafe: false,
+    // Core results are already bounded. Character truncation would corrupt
+    // structured JSON and silently cut source files before context budgeting.
+    resultStrategy: { shape: 'verbatim', onError: 'verbatim' },
     handler: async (input, context) => {
       if (context.signal.aborted || controller.signal.aborted) throw new Error('run_cancelled');
       const callId = callContext.getStore();
@@ -108,9 +111,10 @@ export async function executeApiTurn(turn: ApiTurn): Promise<{ result: AgentResu
         agentId:turn.workerId, version:'atelier-api-v1', systemPrompt:turn.skill,
         model:turn.model, builtinTools:{allow:[]},
         // The real role catalogue includes Chinese guidance and full schemas.
-        // Allocate control within the unchanged 32 KiB conservative total;
-        // never truncate authority guidance or remove schema constraints.
-        contextBudget:{maxInputTokens:32768,regionCaps:{control:24576}},
+        // Include bounded file/tool exchanges as well as the complete catalogue;
+        // the UTF-8-byte estimator charges Chinese text conservatively. Required
+        // content still fails closed at these finite region and total limits.
+        contextBudget:{maxInputTokens:65536,regionCaps:{control:24576,currentTurn:8192,scratchpad:32768}},
         fsm:{states:[{name:'work',type:'llm',tools:names,max_iterations:50}],max_tool_calls:100},
       },
       goal:turn.goal,input,contextId:turn.contextId,agentRunId:turn.runId,
