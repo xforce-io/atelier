@@ -1,0 +1,51 @@
+name: 基础检查
+
+on:
+  push:
+    branches: [main, 'feat/**', 'bugfix/**', 'codex/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: macos-14
+    timeout-minutes: 25
+    steps:
+      - name: 检出 Atelier
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: 检出固定 milkie 源码
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: xforce-io/milkie
+          ref: e049f0b12479b07456e9c10acd709579ca3cd47f
+          path: .ci/milkie
+          persist-credentials: false
+      - name: 准备 Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '23.11.0'
+      - name: 准备 Rust
+        run: |
+          rustup toolchain install 1.91.1 --profile minimal --component rustfmt --component clippy
+          rustup override set 1.91.1
+      - name: 构建固定 milkie 包
+        run: node adapters/milkie/prepare-dependency.mjs .ci/milkie
+      - name: 安装并验证 TypeScript 接入
+        run: |
+          npm --prefix adapters/milkie ci --no-audit --no-fund
+          npm --prefix adapters/milkie test
+      - name: Rust 格式与静态检查
+        run: |
+          cargo fmt --check
+          cargo clippy --locked --all-targets -- -D warnings
+      - name: Rust 测试
+        run: cargo test --locked --all-targets

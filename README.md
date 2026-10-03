@@ -48,6 +48,8 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo run --locked -- --help
 ```
 
+GitHub Actions 的[基础检查](.github/workflows/checks.yml)在 macOS 上固定 Node 23.11.0、Rust 1.91.1 和 milkie 提交，从源码包构建后运行以上 TypeScript/Rust 检查。它不使用真实账号，不执行默认 ignored 的 Keychain/Docker 环境测试，也不替代 CLI/Skill 的完整团队验收；CI 成功只证明所列基础检查。
+
 使用专门的空测试目录；初始化不会覆盖已有内容：
 
 ```sh
