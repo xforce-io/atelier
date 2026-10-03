@@ -1,6 +1,6 @@
 # Issue #1 实现记录
 
-日期：2026-10-02。模式：end-to-end；当前阶段：implementation；状态：进行中，未完成交付、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结验收候选；以下按顺序保留各开发阶段的历史记录。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
+日期：2026-10-03。模式：end-to-end；当前阶段：implementation；状态：进行中，未完成交付、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结验收候选；以下按顺序保留各开发阶段的历史记录。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
 
 设计依据为 [L1 v0.10](../design/1-first-team-delivery/product.md) 与 [L2 v0.10](../design/1-first-team-delivery/technical.md)，均为 2026-10-01 修订。L1 复用此前逐轮讨论确认的产品范围；用户在 Issue 同步后回复“go”，本次据此进入开发。L2 补齐 pending 配置刷新、消息处理终局、跨 Run 操作去重的规则；未自行批准设计或减少验收。`keel-how` 按“无现成机制可讲”跳过。
 
@@ -377,3 +377,22 @@ mailbox retry 尊重本人恢复选择；已保存终局只核对并闭合选择
 原始证据目录 `.agents/verify-runs/1/cli-capability-a06229e2-2673-4566-98bc-b9199041fd86/`：pi-result.json 保留首版限制；pi-controlled-tools-result.json、两轮 JSON 事件、原生合成会话和回调记录保存 Pi 探测；grok-doctor.json、mcp-calls.jsonl、grok-result.json 保存 Grok 探测。所有结果均 productAcceptance=false。临时模型服务和所启动子进程均已退出；未修改全局登录或配置。未改生产代码，未重复 Rust/TypeScript 套件；完整真实 CLI、登录、真实 API、全部验收与审查发布仍未完成。上游增补范围仍待用户决定。
 
 当前已将上述实现、设计和功能地图保存到工作分支开发检查点；历史段落中的“未提交”描述仅对应当时阶段。尚未完成全部实现/验收，不创建 PR、不合入默认分支。
+
+
+## 2026-10-03：消费 milkie 已合入的 CLI 接口（开发检查点）
+
+L1: reuse v0.10，全部 58 项验收保持；L2: write v0.11，仅补充上游 SDK、完整 schema 校验和 CLI 回复恢复契约。依据是此前用户确认的范围及本次继续端到端完成授权。当前阶段仍为 implementation，没有冻结候选或产品验收完成表。
+
+- milkie 固定依赖从 7865ffc 升到合入提交 e049f0b12479b07456e9c10acd709579ca3cd47f；用独立 Git archive 构建，邻仓未提交实验代码未进入包。Rust/TypeScript 握手和 NPM lock 同步。
+- CLI 工具定义保留完整 schema，只给 enum/const 补充确定的类型；固定 Ajv 8.17.1 在宿主回调前校验枚举、分支、长度、范围、未知字段，不作参数转换。业务权限仍由核心执行。
+- CLI 单次执行通过真实 ExecutionClient 注册串行工具；持久关联 SDK Run 和 Atelier Run/Task/投递，用 milkie callId 关联原操作，Pi 原生 ID 不作为业务去重键。
+- 恢复时重查当前授权及原效果；已排队但未交给核心的调用只核对为未执行。丢回复后停止 CLI；核对结果持久保存并进入下轮输入。旧资源未停止或投递不匹配均拒绝开始新模型执行。
+- 生产私有进程入口新增 agent-cli 分支；专用上下文 manifest 绑定配置与身份，原生上下文跨投递保留，账本按投递分目录。成功握手不声称容器隔离已验证。
+- 聚焦开发测试已验证完整 schema、真实 SDK/监督进程/Unix socket、丢回复恢复、未派发调用、恢复后撤权、投递不匹配、私有进程跨投递续接。CLI 响应为明确的 Pi 协议夹具，不含模型调用，不替代真实 CLI 或 Story 验收。
+
+剩余：Rust CLI 驱动与容器装配、显式专用登录/能力检查、跨投递旧 pending 的可信核对、实际 Pi/Grok/模型 API 与两条真实团队入口验收，以及独立审查、CI、PR 和合入。上游 #270 容器心跳问题继续保留待复测；不因上游功能合入而勾选 Atelier 必需验收。
+
+
+本次开发检查：`npm --prefix adapters/milkie test` 为 36 passed（新增 CLI 11 项）；`cargo test --locked` 为 5 Unit + 19 CLI + 111 core passed，10 项显式 Docker/Keychain 测试 ignored，本轮未重跑；`git diff --check` 通过。上述为开发回归，不是冻结 SHA 上的 L1.8 产品验收。
+
+后续还需覆盖 API 原生上下文接收不同投递的路径：现有 API 共用上下文账本目录，而记录按 Delivery 身份严格绑定；不能让不同投递读取彼此账本，也不能用忽略旧文件的方式跳过未核对操作。CLI 已按投递分目录，API 接线及旧开发上下文的明确兼容处理需一起核对。

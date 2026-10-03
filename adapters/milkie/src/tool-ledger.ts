@@ -104,19 +104,33 @@ export class ToolLedger {
       return this.forward(file,record,forward);
     });
   }
-  recover(forward: ForwardTool): Promise<RecoveredOperation[]> {
+  recover(forward: ForwardTool, includeCompleted = false): Promise<RecoveredOperation[]> {
     return this.serial(async () => {
       await this.ensure();
       const recovered: RecoveredOperation[] = [];
       for (const filename of (await fs.readdir(this.directory)).filter(name => /^[a-f0-9]{64}\.json$/.test(name)).sort()) {
         const file = join(this.directory,filename);
         const record = await this.read(file);
-        if (record?.state === 'pending') {
+        if (record && (includeCompleted || record.state === 'pending')) {
           const result = await this.forward(file,record,forward);
           recovered.push({operationId:record.operation.operationId,name:record.operation.name,result});
         }
       }
       return recovered;
+    });
+  }
+  /** A CLI may have persisted a call before handing it to this host. Recovery
+   * must never turn such a queued call into a new business operation. */
+  reconcileRecorded(runId: string, callId: string, name: string, input: unknown, forward: ForwardTool): Promise<RecoveredOperation | undefined> {
+    return this.serial(async () => {
+      identifier(runId); identifier(callId);
+      await this.ensure();
+      const file = this.file(runId, callId);
+      const record = await this.read(file);
+      if (!record) return undefined;
+      if (record.fingerprint !== hash(stable([name,input]))) throw new Error('tool_call_identity_conflict');
+      const result = await this.forward(file, record, forward);
+      return { operationId: record.operation.operationId, name: record.operation.name, result };
     });
   }
 }

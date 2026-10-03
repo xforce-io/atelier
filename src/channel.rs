@@ -14,7 +14,7 @@ use tokio::{
     sync::watch,
 };
 
-pub const MILKIE_COMMIT: &str = "7865ffcc14a8359a055e5e6e0998b56ab2160379";
+pub const MILKIE_COMMIT: &str = "e049f0b12479b07456e9c10acd709579ca3cd47f";
 const MAX_FRAME: usize = 512 * 1024;
 const MAX_FRAMES: u64 = 1024;
 const MAX_BYTES: usize = 32 * 1024 * 1024;

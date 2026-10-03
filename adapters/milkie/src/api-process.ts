@@ -5,19 +5,19 @@ import { executeApiTurn } from './api-turn.js';
 import { ToolLedger } from './tool-ledger.js';
 import { AdapterChannel, type Scope, type Terminal } from './channel.js';
 
-interface Start {
+export interface RunStart {
   workerId:string; contextId:string; configurationId:string; purposeFamily:'coordinate'|'execute'|'verify';
   contextDirectory:string; ledgerDirectory:string; resume:boolean;
   goal:string; input:string; skill:string; tools:ToolSchema[];
-  connection:{protocol:'anthropic-messages'|'openai-chat-completions';model:string;baseUrl?:string;apiKey:string};
 }
+interface Start extends RunStart { connection:{protocol:'anthropic-messages'|'openai-chat-completions';model:string;baseUrl?:string;apiKey:string}; }
 function invalid():Error {return new Error('adapter_start_invalid');}
 function record(value:unknown):Record<string,unknown> {
   if(!value||typeof value!=='object'||Array.isArray(value))throw invalid();return value as Record<string,unknown>;
 }
 function keys(value:Record<string,unknown>,allowed:string[]):void {if(Object.keys(value).some(key=>!allowed.includes(key)))throw invalid();}
 function identifier(value:unknown):value is string {return typeof value==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(value);}
-export function parseStart(value:unknown):Start {
+export function parseRunStart(value:unknown):RunStart & {connection:Record<string,unknown>} {
   const p=record(value);
   keys(p,['workerId','contextId','configurationId','purposeFamily','contextDirectory','ledgerDirectory','resume','goal','input','skill','tools','connection']);
   if(![p.workerId,p.contextId,p.configurationId].every(identifier)||!['coordinate','execute','verify'].includes(p.purposeFamily as string)||typeof p.resume!=='boolean')throw invalid();
@@ -30,7 +30,12 @@ export function parseStart(value:unknown):Start {
     const schema=record(tool.inputSchema);
     if(schema.type!=='object'||schema.additionalProperties!==false)throw invalid();
   }
-  const c=record(p.connection);keys(c,['protocol','model','baseUrl','apiKey']);
+  record(p.connection);
+  return p as unknown as RunStart & {connection:Record<string,unknown>};
+}
+export function parseStart(value:unknown):Start {
+  const p=parseRunStart(value);
+  const c=p.connection;keys(c,['protocol','model','baseUrl','apiKey']);
   if(!['anthropic-messages','openai-chat-completions'].includes(c.protocol as string)||typeof c.model!=='string'||!c.model.trim()||c.model.length>256
     ||typeof c.apiKey!=='string'||!c.apiKey.trim()||Buffer.byteLength(c.apiKey)>16384)throw invalid();
   if(c.baseUrl!==undefined) {

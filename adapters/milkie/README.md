@@ -1,10 +1,10 @@
 # milkie 接入与出站代理（开发中）
 
-该目录提供 Atelier 的 TypeScript API 单次执行适配与持久工具调用账本。任务、成员身份、权限、消息领取和业务状态仍归 Rust 核心；私有 JSON Lines 通道已接到绑定的 Rust 成员入口，并通过真实 Node 子进程集成测试；生产服务已装配、启动和核对 API 接入进程，真实模型与完整团队验收仍未通过。
+该目录提供 Atelier 的 TypeScript API/CLI 单次执行适配与持久工具调用账本。任务、成员身份、权限、消息领取和业务状态仍归 Rust 核心；私有 JSON Lines 通道已接到绑定的 Rust 成员入口，并通过真实 Node 子进程集成测试；生产服务已装配、启动和核对 API 接入进程，真实模型与完整团队验收仍未通过。
 
 ## 固定依赖
 
-使用 milkie 已提交版本 `7865ffcc14a8359a055e5e6e0998b56ab2160379`。该提交已有 AgentRuntime 内置工具白名单、稳定 toolCallId、Run 控制和原生 checkpoint。NPM 的 `@freemanxu/milkie@0.1.1` 包早于这些能力，不能以相同版本号当作兼容版本。
+使用 milkie 已合入版本 `e049f0b12479b07456e9c10acd709579ca3cd47f`。该提交已有 AgentRuntime 内置工具白名单、稳定 toolCallId、Run 控制和原生 checkpoint。NPM 的 `@freemanxu/milkie@0.1.1` 包早于这些能力，不能以相同版本号当作兼容版本。
 
 准备一个包含该提交的 milkie Git 仓库，在本目录运行：
 
@@ -76,3 +76,13 @@ npm run test:isolation
 此检查需要已有固定井字棋检查镜像中的 Node（仅作为可信测试运行时）及 Docker，不安装或运行 agent CLI。它创建带唯一标签的临时内部网络（internal + inhibit_ipv4、IPv6 关闭）、双网络代理，以及真实宿主网络 TCP 对照服务：普通 bridge 能访问对照服务，内部容器不能访问网关、其它宿主地址、直接公网或外部 DNS；经代理只可访问批准的 example.com:443 并取得实际 HTTPS 回应，未批准目标拒绝。之后关闭控制管道、核对代理停止并清理本测试资源。原始证据保存在 `.agents/verify-runs/1/isolation-*.json`，包括代理代码摘要和明确的 cliExecution=false。
 
 2026-10-02 再次核对 milkie 远端 main 仍为 `7865ffcc14a8359a055e5e6e0998b56ab2160379`，#263 未关闭且相邻工作区实现未提交；草稿仅有标准/只读原生工具模式，未提供本项目必需的受控工具回调及隔离启动入口。本组件不消费该草稿，也不私造原生 CLI 协议。CLI 镜像、Worker 专用登录、原生会话卷、Run 资源账本及完整执行接线仍需完成。
+
+
+## CLI 接入开发进度（2026-10-03）
+
+`cli-tools.ts` 保留完整工具 schema，只补充 enum/const 隐含类型，并通过 Ajv 在回调边界执行完整校验。`cli-turn.ts` 通过真实 ExecutionClient 串行转交获准调用，以稳定 callId 关联操作账本；先核对旧调用再续接，未曾转交核心的排队调用不会在恢复时首次执行。未知资源不能作为正常结束，丢失核心回复后停止 CLI，避免生成替代调用。
+
+本层已接统一 SDK 与生产 `main.js` 私有进程入口；`agent-cli` 握手选择 CLI 分支，专用目录 manifest 绑定 Task/Worker/配置/用途及 SDK contextId，续接不重新建会话。生产 Rust 的 CLI 驱动、容器装配、专用登录及完整真实 CLI 路径仍待接线。新增测试中的 Pi 是明确标记的外部协议夹具，运行的 SDK、监督进程、Unix socket 和文件账本为真实实现；不能据此声明 Pi/Grok 模型、容器隔离或 Story 通过。
+
+
+CLI 账本按投递分目录，原生上下文可以跨投递保留；同一投递重试重开原账本。存在其他投递的未回复调用时明确拒绝新模型执行，不改绑到新投递；由可信恢复流程先核对，相关服务接线尚未完成。

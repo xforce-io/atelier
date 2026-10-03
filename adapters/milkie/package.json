@@ -11,7 +11,8 @@
     "test:isolation": "npm run build && node --test dist/test/isolation.live.js"
   },
   "dependencies": {
-    "@freemanxu/milkie": "file:vendor/milkie-7865ffcc14a8359a055e5e6e0998b56ab2160379.tgz"
+    "@freemanxu/milkie": "file:vendor/milkie-e049f0b12479b07456e9c10acd709579ca3cd47f.tgz",
+    "ajv": "8.17.1"
   },
   "devDependencies": {
     "@types/node": "20.19.41",

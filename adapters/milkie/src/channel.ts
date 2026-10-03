@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Readable, Writable } from 'node:stream';
 import type { ForwardTool, ToolOperation } from './tool-ledger.js';
 
-export const milkieCommit = '7865ffcc14a8359a055e5e6e0998b56ab2160379';
+export const milkieCommit = 'e049f0b12479b07456e9c10acd709579ca3cd47f';
 const maxFrame = 512 * 1024;
 const maxBytes = 32 * 1024 * 1024;
 const maxFrames = 1024;
@@ -24,7 +24,7 @@ function object(value: unknown): Record<string,unknown> {
 function capabilities(value: unknown): Capabilities {
   const p=object(value);
   if(Object.keys(p).sort().join(',')!=='builtinToolsDisabled,milkieCommit,nativeCheckpoint,privateTools,skillDigest,stableToolCallIds,transport'
-    ||p.milkieCommit!==milkieCommit||p.transport!=='api'||p.builtinToolsDisabled!==true||p.stableToolCallIds!==true||p.nativeCheckpoint!==true||p.privateTools!==true
+    ||p.milkieCommit!==milkieCommit||!['api','agent-cli'].includes(p.transport as string)||p.builtinToolsDisabled!==true||p.stableToolCallIds!==true||p.nativeCheckpoint!==true||p.privateTools!==true
     ||typeof p.skillDigest!=='string'||!/^[a-f0-9]{64}$/.test(p.skillDigest)) throw invalid();
   return p as unknown as Capabilities;
 }
@@ -91,6 +91,7 @@ export class AdapterChannel {
   }
   get scope(): Scope {if(!this.receiver.scope) throw invalid();return {...this.receiver.scope};}
   get signal(): AbortSignal {return this.controller.signal;}
+  get transport(): string {if(!this.expected) throw invalid();return this.expected.transport;}
   static async connect(input:Readable,output:Writable):Promise<AdapterChannel> {
     const channel=new AdapterChannel(input,output);
     try {
