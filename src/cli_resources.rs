@@ -172,7 +172,7 @@ impl Store {
 
 // Fixed commands only; no Docker arguments, resource names or labels from a
 // model. Suppress raw Docker stderr and bound the entire read/wait operation.
-async fn docker(args: &[&str]) -> Result<Vec<u8>> {
+pub(crate) async fn docker(args: &[&str]) -> Result<Vec<u8>> {
     const LIMIT: u64 = 128 * 1024;
     let mut cmd = tokio::process::Command::new("docker");
     cmd.env_clear();

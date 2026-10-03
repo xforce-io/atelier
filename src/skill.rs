@@ -151,8 +151,8 @@ impl Store {
             ),
             operation(
                 "setup",
-                "connection create/update/test; connection credential set/clear; worker create/update; team create",
-                "本机管理入口；连接按 API/CLI 互斥配置。秘密只经 credential set --stdin；CLI 隔离接入须等实现并通过检查。用各命令 --help 取字段，写操作带 request-id。",
+                "connection create/update/prepare/test; connection credential set/clear; worker create/update; team create",
+                "本机管理入口；连接按 API/CLI 互斥配置。API 秘密只经 credential set --stdin；CLI prepare 指定 Worker、冻结镜像和出站策略，准备不等于登录或可执行，完整 CLI 接入仍须实现并通过检查。用各命令 --help 取字段，写操作带 request-id。",
             ),
             operation(
                 "runtime",

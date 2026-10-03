@@ -415,3 +415,17 @@ L1: reuse v0.10，58 项验收不变；L2: write v0.12，补充当前实现所�
 剩余主路径：Rust 实际 CLI 调度与停止回收、显式 Worker 专用准备/登录/能力检查、旧投递 pending 的可信核对、真实 API/Pi/Grok 与 CLI/Skill 团队验收；之后才进入独立审查、CI、PR 和合入。没有把 milkie 已合入、镜像能启动或局部集成通过视为端到端完成。
 
 后续本轮结果：最新生产镜像 `sha256:10f715b28bb1362e1844e88c25b79719382e45d85874bb2037c4153192b610dd` 构建成功；由它派生的夹具镜像 `sha256:767be44170cfa4f8fa296ae08ab0731c405bd48629c946252cbed45ef0183593` 通过真实 Docker 启动器测试，证据为 `.agents/verify-runs/1/cli-container-7b2680e7-f30c-4a78-899d-5a0dddeeac79.json`。`nativeCli=false`、`model=false`；临时容器与网络按测试归属清理。此处不重复计入 43 个常规 TypeScript 测试，也不将前轮隔离网络证明冒充本轮重新执行。
+
+## 2026-10-03：Worker 专用 CLI 准备入口
+
+L1: reuse v0.10；L2: write v0.13，补充既定 prepare/login 路径中的准备契约。上一轮为有提交与实测证据的 progress，本轮继续同一 Issue，不改变全部 58 项验收及最终交付目标。
+
+新增真实 `connection prepare <id> --revision <n> --worker <id> [--version <冻结版本>]`：持久保留 preparing/prepared/failed 和固定错误类别，按 requestId 去重。先原子登记，再核对本地固定镜像、milkie/适配标签及 Docker 引擎，最后建立与 Worker/执行配置绑定的私有登录目录。connection show 返回不同成员及历史连接版本的准备事实；request show 返回与原命令一致的结果。成功仅表示 prepared_not_authenticated，loginGeneration 仍为 0，没有账号或模型成功声明。
+
+专用目录不共享宿主 HOME，不读取已有真实凭据；拒绝链接、未归属登录内容、绑定冲突和已准备目录丢失。显式旧版本修复只允许该成员已有的冻结执行配置；准备不创建 Task/Run，活动或未知 Run 会阻止重新准备。请求与状态保存失败整体回滚；preparing 中断可按原 ID 重开继续，已完成失败须修复后新 ID 重测，不在缓存查询时重复 I/O。环境锁已提供，登录和实际 CLI 运行仍须接入同一互斥边界。
+
+数据库 schema 22 增加 cli_environments；未发行的旧 schema 明确拒绝而不覆盖。产品 Skill 配置指导、S1 功能地图和 L2 已同步；镜像构建仍为现有显式脚本，本命令暂只核对已准备镜像，不能把该子路径视为完整 S1.A16 通过。
+
+开发检查：Rust 8 Unit + 19 CLI + 113 core = 140 项常规测试通过，11 项显式环境测试默认 ignored；Clippy、格式与差异检查通过。另显式执行 1 个真实 CLI/Docker 镜像准备场景通过，覆盖两个成员独立目录、命令与 request show 重放、目录缺失拒绝及无业务工作副作用，证据 `.agents/verify-runs/1/cli-prepare-223d6651-dcb0-4cf1-865a-cf25b851be25.json`。该场景不启动原生 CLI、不登录、不调用模型；TypeScript 未修改，43 项为上一轮证据，本轮未重复运行。
+
+下一主路径是专用登录（含用户交互、持久资源归属和中断核对）、按上下文使用专用登录材料、运行服务真实 CLI 调度/停止回收及能力检查。随后仍须 API/Pi/Grok、CLI/产品 Skill 的全部真实团队路径、独立审查、CI、PR 与合入。本轮没有创建 PR、冻结候选或勾选 Story 验收。

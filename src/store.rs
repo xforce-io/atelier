@@ -190,7 +190,7 @@ impl Store {
     pub fn open(path: &Path) -> Result<Self> {
         let db = Self::connect(path)?;
         let version: i64 = db.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version != 21 {
+        if version != 22 {
             return Err(Error::Invalid(format!(
                 "工作区格式不支持或初始化未完成：{version}；请保留原目录修复"
             )));
@@ -212,7 +212,7 @@ impl Store {
             .connection
             .query_row("SELECT id FROM workspace", [], |r| r.get(0))?;
         Ok(
-            json!({"id": id,"self": self.worker(&self.self_id)?,"schemaVersion":21,
+            json!({"id": id,"self": self.worker(&self.self_id)?,"schemaVersion":22,
             "capabilities":{"persistentCore":true,"runtimeLifecycle":true,"execution":true,"executionTransports":["api"]}}),
         )
     }
@@ -283,6 +283,16 @@ impl Store {
             crate::connection::ConnectionSpec::Api { .. }
         ));
         value["connection"] = serde_json::to_value(connection)?;
+        let mut stmt=tx.prepare("SELECT e.data FROM cli_environments e JOIN connection_versions v ON v.id=json_extract(e.data,'$.connectionVersion') WHERE json_extract(v.data,'$.connection_id')=?1 ORDER BY e.id")?;
+        let rows = stmt
+            .query_map([id], |r| r.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        value["cliEnvironments"] = json!(
+            rows.into_iter()
+                .map(|s| serde_json::from_str::<Value>(&s))
+                .collect::<std::result::Result<Vec<_>, _>>()?
+        );
+        drop(stmt);
         tx.commit()?;
         Ok(value)
     }
@@ -427,6 +437,7 @@ impl Store {
             Command::CredentialSet { .. }
                 | Command::CredentialClear { .. }
                 | Command::ConnectionTest { .. }
+                | Command::ConnectionPrepare { .. }
         ) {
             return Err(Error::Invalid(
                 "凭据管理和连接检查只能经专用入口执行".into(),
@@ -815,7 +826,8 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
         } => crate::blocker::resolve(db, actor, cause, id, *revision, *task_revision, evidence),
         Command::CredentialSet { .. }
         | Command::CredentialClear { .. }
-        | Command::ConnectionTest { .. } => {
+        | Command::ConnectionTest { .. }
+        | Command::ConnectionPrepare { .. } => {
             Err(Error::Invalid("凭据操作不能通过普通业务命令执行".into()))
         }
         Command::TaskRework {

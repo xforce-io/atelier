@@ -28,6 +28,140 @@ fn success(path: &Path, args: &[&str]) -> Value {
 }
 
 #[test]
+#[ignore = "requires an explicitly prepared immutable Atelier CLI image; never uses native login"]
+fn real_cli_prepare_is_private_worker_bound_persistent_and_distinct_from_login() {
+    let image = std::env::var("ATELIER_CLI_IMAGE").expect("set the prepared image digest");
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("workspace");
+    success(&p, &["workspace", "init", "--name", "CLI 环境测试"]);
+    let config = dir.path().join("cli.json");
+    std::fs::write(&config,serde_json::json!({"transport":"agent-cli","runtime":"pi","image":image,"egress_hosts":["example.com"]}).to_string()).unwrap();
+    let connection = success(
+        &p,
+        &[
+            "--request-id",
+            "connection",
+            "connection",
+            "create",
+            "--name",
+            "CLI",
+            "--file",
+            config.to_str().unwrap(),
+        ],
+    );
+    let id = connection["connection"]["id"].as_str().unwrap();
+    let worker = success(
+        &p,
+        &[
+            "--request-id",
+            "worker",
+            "worker",
+            "create",
+            "--name",
+            "专用成员",
+            "--connection",
+            id,
+        ],
+    );
+    let worker_id = worker["id"].as_str().unwrap();
+    let args = [
+        "--request-id",
+        "prepare",
+        "connection",
+        "prepare",
+        id,
+        "--revision",
+        "1",
+        "--worker",
+        worker_id,
+    ];
+    let result = success(&p, &args);
+    assert_eq!(result["environment"]["state"], "prepared", "{result}");
+    assert_eq!(result["environment"]["code"], "prepared_not_authenticated");
+    assert_eq!(result["environment"]["loginGeneration"], 0);
+    assert_eq!(result["environment"]["workerId"], worker_id);
+    assert_eq!(success(&p, &args), result);
+    assert_eq!(success(&p, &["request", "show", "prepare"]), result);
+    let environment = worker["execution_config"].as_str().unwrap();
+    let root = p.join("cli-environments").join(environment);
+    assert_eq!(std::fs::read_dir(root.join("login")).unwrap().count(), 0);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(root.join("login"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o077,
+            0
+        );
+    }
+    let other = success(
+        &p,
+        &[
+            "--request-id",
+            "other-worker",
+            "worker",
+            "create",
+            "--name",
+            "另一成员",
+            "--connection",
+            id,
+        ],
+    );
+    let separate = success(
+        &p,
+        &[
+            "--request-id",
+            "other-prepare",
+            "connection",
+            "prepare",
+            id,
+            "--revision",
+            "1",
+            "--worker",
+            other["id"].as_str().unwrap(),
+        ],
+    );
+    assert_ne!(separate["environment"]["id"], result["environment"]["id"]);
+    let shown = success(&p, &["connection", "show", id]);
+    assert_eq!(shown["cliEnvironments"].as_array().unwrap().len(), 2);
+    assert_eq!(shown["executionSupported"], false);
+    assert_eq!(success(&p, &["task", "list"]), serde_json::json!([]));
+    let sql = rusqlite::Connection::open(p.join("atelier.sqlite3")).unwrap();
+    assert_eq!(
+        sql.query_row("SELECT count(*) FROM runs", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    std::fs::remove_dir(root.join("login")).unwrap();
+    let failed = success(
+        &p,
+        &[
+            "--request-id",
+            "missing-storage",
+            "connection",
+            "prepare",
+            id,
+            "--revision",
+            "1",
+            "--worker",
+            worker_id,
+        ],
+    );
+    assert_eq!(failed["environment"]["state"], "failed");
+    assert_eq!(failed["environment"]["code"], "private_environment_invalid");
+    assert!(!root.join("login").exists());
+    let evidence = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(".agents/verify-runs/1")
+        .join(format!("cli-prepare-{}.json", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(evidence.parent().unwrap()).unwrap();
+    std::fs::write(&evidence,serde_json::json!({"kind":"development_integration","image":image,"prepared":result,"separateWorker":separate,"missingStorage":failed,"nativeLogin":false,"model":false}).to_string()).unwrap();
+    println!("evidence: {}", evidence.display());
+}
+
+#[test]
 fn separate_cli_processes_persist_team_task_and_mailbox() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("中文 空格工作区");

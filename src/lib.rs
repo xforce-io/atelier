@@ -8,6 +8,7 @@ pub mod blocker;
 mod candidate;
 pub mod channel;
 mod checker;
+pub mod cli_environment;
 pub mod cli_resources;
 pub mod connection;
 pub mod connection_probe;

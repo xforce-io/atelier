@@ -2,6 +2,8 @@
 
 状态：基础 CLI 部分已实现，完整产品路径未验收。标准为 [L1 v0.10 第 8 节](../../../../docs/design/1-first-team-delivery/product.md#8-验收与效果验证) 的 S1.A1–A3、A7–A17；本文件只提供路径，不复制另一套验收标准。
 
+S1.A16 的准备入口现为 `connection prepare <id> --revision <n> --worker <id> [--version <冻结版本>]`，带稳定 requestId；目前核对已显式准备的本地固定镜像并建立 Worker 私有存储。记录 preparing/prepared/failed 与固定错误类别，经 connection show/request show 复查，prepared 不等于登录或执行可用。镜像构建开发脚本不能替代完整产品准备路径；专用登录、检查、真实运行与续接尚未贯通，S1.A16 不记 pass。分别验证两个 Worker 不共用目录、重复请求不重做、已准备目录丢失不补建、没有 Task/Run 副作用。
+
 ## 真实入口
 
 初始化、配置本人及三名数字员工、指定人或数字员工团队负责人、授权、隔离 CLI 准备/登录和运行服务启动。

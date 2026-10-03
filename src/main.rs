@@ -136,6 +136,15 @@ enum ProfileCommand {
 
 #[derive(Subcommand)]
 enum ConnectionCommand {
+    Prepare {
+        id: String,
+        #[arg(long)]
+        revision: u64,
+        #[arg(long)]
+        version: Option<String>,
+        #[arg(long)]
+        worker: String,
+    },
     Test {
         id: String,
         #[arg(long)]
@@ -760,6 +769,30 @@ fn run(cli: Cli) -> Result<Value> {
         Top::Worker(WorkerCommand::Show { id }) => return Ok(json!(store.worker(&id)?)),
         Top::Run(RunCommand::Show { id }) => return store.run_view(&id),
         Top::Connection(ConnectionCommand::List) => return store.list("connection"),
+        Top::Connection(ConnectionCommand::Prepare {
+            id,
+            revision,
+            version,
+            worker,
+        }) => {
+            let request = cli
+                .request_id
+                .as_deref()
+                .ok_or_else(|| Error::Invalid("准备环境必须提供 --request-id".into()))?;
+            return tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?
+                .block_on(atelier::cli_environment::prepare(
+                    &mut store,
+                    request,
+                    &Command::ConnectionPrepare {
+                        id,
+                        revision,
+                        version,
+                        worker,
+                    },
+                ));
+        }
         Top::Connection(ConnectionCommand::Test {
             id,
             revision,

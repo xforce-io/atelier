@@ -1,6 +1,6 @@
 # 功能地图
 
-Issue #1：异步团队、CLI 与产品 Atelier Skill，L1/L2 v0.10；基础 CLI 已开始实现，全部 Story 尚未验收通过。[实现记录](../../../../docs/implementation/1-first-team-delivery.md) 区分已有集成测试与未运行的完整验收。旧前台流程证据不证明消息协作通过。
+Issue #1：异步团队、CLI 与产品 Atelier Skill，L1 v0.10 / L2 v0.13；基础 CLI 与 Worker 专用 CLI 准备已有实现，全部 Story 尚未验收通过。[实现记录](../../../../docs/implementation/1-first-team-delivery.md) 区分已有集成测试与未运行的完整验收。旧前台流程证据不证明消息协作通过。
 
 | 文件 | L1.8 | 真实入口 |
 |---|---|---|

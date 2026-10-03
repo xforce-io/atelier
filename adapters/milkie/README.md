@@ -96,7 +96,9 @@ node prepare-cli-image.mjs /path/to/grok-linux-arm64
 npm run test:cli-container
 ```
 
-脚本仅复制显式应用文件、固定 milkie 包与指定二进制到构建上下文，固定 Node 基础镜像和 Pi 0.85.1，并核对 Grok 二进制摘要。结果写入忽略的 `.cache/cli-image.json`，以镜像 digest 使用；脚本不导入任何登录或会话。它目前是开发准备工具，产品 `connection prepare/login` 尚未接入，不能以构建成功表示成员已可工作。
+脚本仅复制显式应用文件、固定 milkie 包与指定二进制到构建上下文，固定 Node 基础镜像和 Pi 0.85.1，并核对 Grok 二进制摘要。结果写入忽略的 `.cache/cli-image.json`，以镜像 digest 使用；脚本不导入任何登录或会话，仍为开发构建入口。
+
+Rust `connection prepare` 核对上述本地固定镜像，并为指定 Worker/连接版本建立私有存储；`connection show` 可查持久准备结果。该入口尚不代替镜像构建脚本，专用 `connection login` 和完整运行服务接线仍未提供。准备结果明确为 `prepared_not_authenticated`，没有认证或模型成功含义。
 
 `cli-container-main.js` 是可信宿主启动器，第一行私有输入携带核心已登记的 Run/工作区/归属、Docker 引擎、固定镜像、目录及批准域名，随后透传成员通道。仅创建具有归属标签的执行容器、代理与两个网络，核对非 root、只读根目录与受限挂载，成员容器不接出站网络。启动器不删除资源；核心须先登记其进程，再交付创建参数，停止时须核对其进程组消失并按资源身份清理。
 
