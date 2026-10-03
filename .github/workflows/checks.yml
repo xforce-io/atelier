@@ -19,18 +19,18 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: 检出 Atelier
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
       - name: 检出固定 milkie 源码
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: xforce-io/milkie
           ref: e049f0b12479b07456e9c10acd709579ca3cd47f
           path: .ci/milkie
           persist-credentials: false
       - name: 准备 Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '23.11.0'
       - name: 准备 Rust
@@ -49,3 +49,13 @@ jobs:
           cargo clippy --locked --all-targets -- -D warnings
       - name: Rust 测试
         run: cargo test --locked --all-targets
+      - name: 保留失败构建的公开依赖包
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: milkie-source-package
+          path: |
+            adapters/milkie/vendor/milkie-*.tgz
+            adapters/milkie/vendor/provenance.json
+          retention-days: 3
+          if-no-files-found: ignore
