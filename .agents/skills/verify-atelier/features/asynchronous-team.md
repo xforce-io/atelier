@@ -30,3 +30,5 @@ CLI 和产品 Atelier Skill 分别验证；需要真实成员的路径不可用 
 ## 真实消息协作证据（2026-10-03）
 
 候选 `60437b0`、任务 `fec018c7…` 已由 Grok 承接/安排、Pi 执行/直交、独立 Grok 检验，再由原团队负责人处理结果并发起本人待办 `cdf64455…`。宿主只提交配置、启动服务、查询及导出；未代成员作阶段决定。记录见 `fixed-tools-game-observations-20261003.jsonl`。本轮宿主始终在场，不能声称 S7.A1 的“完全退出宿主”通过；正常首轮通过也不证明失败返工及其他 S7 边界。
+
+2026-10-03 新证据：`pi-host-exit-game-result-20261003.json` 记录真实 Pi 0.85.1 / openai-codex/gpt-5.6-sol 宿主读取产品 Skill、创建/配置任务 `7c77a16a…` 并启动服务后退出（exitCode=0、PID 不存在）。DeepSeek 执行、检验及结果协调均在宿主退出后启动，独立检查 19/19，最终人类待办 `e08a1f27…`。宿主调用清单无阶段安排；该任务尚待试玩和正式接受。S7.A5 的非负责人四类操作拒绝，以及本人负责人合法承接/执行排队，见 `skill-role-boundary-and-export-20261003.json` 与 `skill-human-leader-boundary-20261003.json`；剩余分支仍须分别核对。

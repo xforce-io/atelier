@@ -610,3 +610,13 @@ L1 v0.10 不变，L2 v0.21 明确总输入 64 KiB、控制区 24 KiB、当前输
 5 次真实 API Run 均正常停止：负责人自行承接和安排，执行成员修改并提交非 partial 产出 `db7ab0f3…`，负责人处理结果并安排独立检验，检验成员接受交接后运行冻结检查，负责人续接上下文提交人类验收。独立检验 `c75e2dce…` 与检查 `2c72c8f9…` 绑定同一固定产出；真实离线、只读容器中的 19 个浏览器场景全部通过，检查资源已停止。导出逐文件摘要匹配，内容摘要 `3de619681750f5fbe67edd3b34d5d4d1f6f9270caa25d181487c3fda840b51ea`。
 
 验收请求 `cd9e8c84…` 仍 open，任务修订 3、active；尚未作当前游戏的人类试玩与正式接受。服务已显式停止，activeRuns=0，人类待办保留。证据 `deepseek-complete-file-game-observations-20261003.jsonl`、`deepseek-complete-file-game-result-20261003.json`、`ci-37132280493.json`。这证明正常 API 业务链路和负责人跨投递原生续接；不证明失败 Run 的恢复，milkie #273 仍开放。原先两个失败任务保持原记录。本轮宿主未退出，未出现独立检验失败后的返工，58 项完整验收、独立审查与合入仍未完成。
+
+## 2026-10-03：真实 Pi Skill 宿主退出后，团队继续到人类待办
+
+软件候选 `c0329d4`（代码同 d4c837f），L1 v0.10 / L2 v0.21。以本机 Pi 0.85.1、实际模型 openai-codex/gpt-5.6-sol 作为被测产品 Skill 宿主，提供自然语言目标及既有团队/固定契约；没有脚本代它选择 CLI 操作。其真实工具记录显示读取已安装 SKILL.md、describe、help、创建 pending Task `7c77a16a…`、更新契约、启动服务；之后立即输出排队状态并退出，不承接、安排、修改产出或轮询。
+
+父进程记录 Pi PID 85191 在 15:24:11.737 UTC 以 exitCode=0 退出；独立查询确认 PID 不存在。运行服务 PID 85447、epoch `b6dd6ab4…` 继续处理成员消息。原生事件时间戳证明负责人首次协调在宿主退出后结束，后续执行、结果协调、独立检验及验收请求协调均在退出后才启动。5 次 Run 均 completed 并停止，产出 `dacfd1b8…` 的独立检查 19/19 通过；负责人提交验收请求 `e08a1f27…`，任务修订 3，当前等待人类决定。导出摘要匹配，随后显式停服保留待办。
+
+证据 `pi-host-exit-game-result-20261003.json` 保存具名宿主/模型、Skill 摘要、全部宿主工具调用、进程退出、原生事件时间范围/摘要和完整任务/检验证据；`pi-host-exit-game-observations-20261003.jsonl` 保存独立观察。该证据补齐 S2.A5/S7.A1 的宿主退出后正常推进分支；尚无本任务试玩/正式接受，不代替失败返工和其他必需分支。
+
+同一候选补做真实 Skill 权限与导出边界：DeepSeek 与 Pi/Grok 两个任务中，本人有 arrange 授权但非冻结负责人，intake/execute/verify/rework 共 8 次均返回 forbidden，任务不变。本人担任负责人时，另建任务 `7202ea79…` 实际承接和排队成功；服务未启动即取消，投递 cancelled、Task closed/outcome=cancelled、Run 0。两次非空导出拒绝且文件摘要不变；失败任务 partial 产出 `561f048e…` 可按原摘要导出，保留 partial 且不改变任务或验收。证据 `skill-role-boundary-and-export-20261003.json`、`skill-human-leader-boundary-20261003.json`、`skill-partial-export-20261003.json`。仅补齐所述分支，不把未运行的合法检验/返工及活动取消分支写成通过。
