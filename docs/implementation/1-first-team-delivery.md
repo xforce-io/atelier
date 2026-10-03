@@ -539,3 +539,14 @@ CI 不执行默认 ignored 的真实 Keychain/Docker 环境测试，也不替代
 
 
 基础 CI 首次运行 `37108533107` 在 npm ci 被 EINTEGRITY 拒绝，Rust 检查未执行。第二次 `37108717165` 复现并保存公开依赖包用于比较。对 CI 与本地产物逐文件和完整解压 tar 核对：tar 都为 1,965,568 字节，SHA-256 均为 `03f8f60950ac5e071fe8bd42b766e044e476633aa8b802cfc96c2a76796e037d`，仅 gzip 编码不同。准备脚本现保留 tar 原样，以无压缩 DEFLATE 固定 gzip，并同时记录 tar/包摘要；只更新该本地依赖的 lock integrity，不改变上游文件、依赖版本或放宽校验。标准化包为 1,965,881 字节，包 SHA-256 为 `2f025c8d7f9f75d6f4e693d9e8088b469dd325cf5c8b95e6a4c38cc506e013a9`。修复后的 CI 结果待运行，不能把此前失败写为通过。
+
+
+## 2026-10-03：基础 CI 通过与真实 Grok 工具往返
+
+L1 v0.10 / L2 v0.18 不变。提交 d640ea2 的 GitHub Actions `37108902922` 在干净 macOS 环境通过：固定源码包生成与 npm integrity 校验、54 项 TypeScript、149 项 Rust、格式和 Clippy。11 项需环境测试仍默认 ignored；该结果不替代真实团队验收。CI 包摘要与本地标准化包一致，证据 `.agents/verify-runs/1/ci-37108902922.json`。
+
+用户明确完成专用 Grok 设备授权后，真实 Grok 1.0.46 报告登录成功，管理入口保存登录代次 2 并核对资源全部停止。随后通过真实产品 `connection test --worker`，grok-4.7-build-fast 实际完成随机挑战的受控工具往返，记录 passed / cli_tool_roundtrip，诊断所属容器和网络已清理。证据 `.agents/verify-runs/1/native-grok-success-20261003.json`；没有保存账号标识、秘密或登录终端全文。该事实证明当前连接的认证和一次真实工具诊断，不证明原生续接、完整游戏交付或 #270 的偶发问题已解决。
+
+Pi 0.85.1 也已通过同一路由进入 OpenAI Codex 设备认证，当前等待用户授权。工作区已建立本人、Grok 团队负责人、Pi 执行成员和独立 Grok 检验成员，共四名 Worker；职责和显式授权已保存，样例固定基线与可信检查配置已准备。独立检验成员尚须自己的专用登录，不共享团队负责人凭据；服务未启动、未代成员承接或安排工作。
+
+真实 API 已按用户“再试一次”通过产品 CLI/Keychain 重测，当前配置仍返回 HTTP 400 / provider_rejected，不能声称 API 恢复。继续完成 Pi 与独立检验成员认证、实际业务执行/续接和完整 CLI/Skill 团队验收；全部必需范围保持不变。
