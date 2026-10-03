@@ -64,6 +64,14 @@ test('lost tool reply stops the model; next turn recovers the same operation bef
     assert.equal(result.recoveredOperations,1);
     assert.equal(operationIds[0],operationIds[1]);
     assert.equal(effects,1);
+    // The durable record may already be completed when a restart loses the
+    // in-memory reconciled input. A third turn still checks and sees its result.
+    const third=new Gateway([done()]);
+    const retry=options(directory,third,forward);retry.runId='run-three';
+    const repeated=await executeApiTurn(retry);
+    assert.equal(repeated.recoveredOperations,1);
+    assert.equal(operationIds[2],operationIds[0]);assert.equal(effects,1);
+    assert.ok(JSON.stringify(third.requests[0]).includes('reconciledOperations'));
   } finally {await rm(directory,{recursive:true,force:true});}
 });
 
@@ -114,6 +122,7 @@ test('runtime continuation loads milkie checkpoint without restoring previous to
     const checkpoint=(saved.payload as {checkpoint:import('@freemanxu/milkie').AgentCheckpoint}).checkpoint;
     const nextGateway=new Gateway([call('unauthorized','message_respond',{reason:'旧权限不应保留'}),done()]);
     const next=options(directory,nextGateway,async()=>{throw new Error('revoked_tool_reached_core');});
+    next.ledger=await ToolLedger.openDelivery(join(directory,'ledger'),'delivery-two');
     next.runId='run-two';next.checkpoint=checkpoint;next.tools=[];
     const result=await executeApiTurn(next);
     assert.equal(result.result.status,'completed');

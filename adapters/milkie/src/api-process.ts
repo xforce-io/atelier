@@ -105,13 +105,14 @@ export async function runApiProcess(channel:AdapterChannel):Promise<void> {
   // exception bodies into ordinary process logs. Secrets only arrive on pipe.
   process.env.LOG_LEVEL='silent';
   try {
+    const ledger=await ToolLedger.openDelivery(start.ledgerDirectory,channel.scope.deliveryId);
     const parsed=resolveAndParseConnection({contractVersion:2,legacyEnv:{},fields:{transport:'api',...start.connection}});
     const {gateway,adapterFamily}=assembleApiGateway(parsed);
     const result=await executeApiTurn({
       workerId:start.workerId,taskId:channel.scope.taskId,runId:channel.scope.runId,contextId:start.contextId,
       goal:start.goal,input:start.input,skill:start.skill,model:{provider:start.connection.protocol,adapter:adapterFamily,model:start.connection.model},
       tools:start.tools,gateway,stateStore:context.store,eventStore:context.events,checkpoint:context.checkpoint,
-      ledger:new ToolLedger(start.ledgerDirectory,channel.scope.deliveryId),forward:channel.forward,signal:channel.signal,
+      ledger,forward:channel.forward,signal:channel.signal,
     });
     const stopReason:Terminal['stopReason']=result.stopReason==='model_stop'?'completed':
       ['cancelled','deadline','budget_exhausted'].includes(result.stopReason)?result.stopReason as Terminal['stopReason']:'failed';

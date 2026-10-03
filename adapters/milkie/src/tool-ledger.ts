@@ -31,7 +31,17 @@ function stable(value: unknown): string {
 }
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 function identifier(value: string): void {
-  if (!value || Buffer.byteLength(value) > 256 || value.includes('\0')) throw new Error('tool_identity_invalid');
+  if (typeof value !== 'string' || !value || Buffer.byteLength(value) > 256 || value.includes('\0')) throw new Error('tool_identity_invalid');
+}
+
+const recordName = /^[a-f0-9]{64}\.json$/;
+const temporaryName = /^[a-f0-9]{64}\.json\.[a-f0-9-]{36}\.tmp$/;
+function deliveryDirectoryId(value: string): void {
+  if (typeof value !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(value)) throw new Error('tool_delivery_invalid');
+}
+async function syncDirectory(path: string): Promise<void> {
+  const fd = await fs.open(path, 'r');
+  try { await fd.sync(); } finally { await fd.close(); }
 }
 
 /** Caller must own the delivery's exclusive execution slot. This journal stores
@@ -39,6 +49,65 @@ function identifier(value: string): void {
 export class ToolLedger {
   private tail: Promise<unknown> = Promise.resolve();
   constructor(private readonly directory: string, private readonly deliveryId: string) { identifier(deliveryId); }
+  /** Native dialogue spans deliveries; operation identity does not. The core
+   * owns an exclusive context slot while opening. Old development layouts are
+   * moved without replaying calls; an unresolved foreign delivery blocks all
+   * new model work until the core can reconcile it under its original scope. */
+  static async openDelivery(root: string, deliveryId: string): Promise<ToolLedger> {
+    deliveryDirectoryId(deliveryId);
+    const stat = await fs.lstat(root);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0) throw new Error('tool_ledger_invalid');
+    const legacy: { file: string; name: string; record: Record }[] = [];
+    const check = (record: Record) => {
+      if (record.deliveryId !== deliveryId && record.state === 'pending') throw new Error('tool_foreign_delivery_unreconciled');
+    };
+    // Validate everything before migrating anything. Temporary files precede
+    // the atomic pending record and therefore have never authorized forwarding.
+    for (const entry of await fs.readdir(root, { withFileTypes: true })) {
+      const file = join(root, entry.name);
+      if (entry.isFile() && temporaryName.test(entry.name)) continue;
+      if (entry.isFile() && recordName.test(entry.name)) {
+        const metadata = await fs.lstat(file);
+        if (metadata.size > 3 * limit) throw new Error('tool_ledger_corrupt');
+        const raw = JSON.parse(await fs.readFile(file, 'utf8')) as Record;
+        deliveryDirectoryId(raw.deliveryId);
+        const record = await new ToolLedger(root, raw.deliveryId).read(file);
+        if (!record) throw new Error('tool_ledger_corrupt');
+        check(record); legacy.push({file,name:entry.name,record});
+      } else if (entry.isDirectory()) {
+        deliveryDirectoryId(entry.name);
+        const metadata = await fs.lstat(file);
+        if ((metadata.mode & 0o077) !== 0) throw new Error('tool_ledger_invalid');
+        const ledger = new ToolLedger(file, entry.name);
+        for (const item of await fs.readdir(file, { withFileTypes: true })) {
+          if (item.isFile() && temporaryName.test(item.name)) continue;
+          if (!item.isFile() || !recordName.test(item.name)) throw new Error('tool_ledger_corrupt');
+          const record = await ledger.read(join(file,item.name));
+          if (!record) throw new Error('tool_ledger_corrupt');
+          check(record);
+        }
+      } else throw new Error('tool_ledger_corrupt');
+    }
+    for (const {file,name,record} of legacy) {
+      const ledger = new ToolLedger(join(root,record.deliveryId),record.deliveryId);
+      await ledger.ensure();
+      const target = join(ledger.directory,name);
+      try { await fs.link(file,target); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        const saved = await ledger.read(target);
+        if (!saved || stable(saved) !== stable(record)) throw new Error('tool_ledger_migration_conflict');
+      }
+      // Link + fsync + unlink also tolerates a crash with both names present.
+      // Unlike rename, it never overwrites a conflicting durable operation.
+      await syncDirectory(ledger.directory);
+      await fs.unlink(file);
+      await syncDirectory(root);
+    }
+    const ledger = new ToolLedger(join(root,deliveryId),deliveryId);
+    await ledger.ensure();
+    return ledger;
+  }
   private serial<T>(action: () => Promise<T>): Promise<T> {
     const next = this.tail.then(action);
     this.tail = next.catch(() => {});
@@ -47,7 +116,7 @@ export class ToolLedger {
   private async ensure(): Promise<void> {
     await fs.mkdir(this.directory, { mode: 0o700 }).catch(error => { if (error.code !== 'EEXIST') throw error; });
     const stat = await fs.lstat(this.directory);
-    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('tool_ledger_invalid');
+    if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0) throw new Error('tool_ledger_invalid');
     const parent = await fs.open(dirname(this.directory),'r');
     try { await parent.sync(); } finally { await parent.close(); }
   }
@@ -57,7 +126,8 @@ export class ToolLedger {
     try { stat = await fs.lstat(file); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error; }
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 3 * limit) throw new Error('tool_ledger_corrupt');
     const record = JSON.parse(await fs.readFile(file, 'utf8')) as Record;
-    if (record.version !== 1 || record.deliveryId !== this.deliveryId || !record.operation || !['pending','completed'].includes(record.state)) throw new Error('tool_ledger_corrupt');
+    if (!record || record.version !== 1 || record.deliveryId !== this.deliveryId || !record.operation || !['pending','completed'].includes(record.state)
+      || (record.state === 'completed' && !Object.hasOwn(record,'result'))) throw new Error('tool_ledger_corrupt');
     for (const id of [record.operation.operationId, record.operation.originatingRunId, record.operation.toolCallId, record.operation.name]) identifier(id);
     if (this.file(record.operation.originatingRunId, record.operation.toolCallId) !== file || hash(stable([record.operation.name,record.operation.input])) !== record.fingerprint) throw new Error('tool_ledger_corrupt');
     return record;

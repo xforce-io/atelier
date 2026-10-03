@@ -96,7 +96,10 @@ export async function executeApiTurn(turn: ApiTurn): Promise<{ result: AgentResu
   try {
     // Transport recovery precedes any new model invocation. An earlier Run's
     // recorded operation retains its ID; new model calls receive new IDs.
-    const recovered = await turn.ledger.recover(forward);
+    // A crash after durable reconciliation but before checkpointing the next
+    // input must not lose that result. Recheck even completed records under
+    // this delivery's current authorization before exposing them to the model.
+    const recovered = await turn.ledger.recover(forward,true);
     const recoveredOperations = recovered.length;
     const input = recovered.length === 0 ? turn.input : JSON.stringify({workMessage:turn.input,reconciledOperations:recovered});
     const runtime = new AgentRuntime({

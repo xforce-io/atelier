@@ -72,6 +72,16 @@ impl ExecutionContext {
     /// May create only a never-used reservation. Once start might have reached
     /// the child, missing files are a recovery failure, never an empty session.
     pub fn prepare_directories(&self, workspace: &Path) -> Result<()> {
+        self.prepare_storage(workspace, false)
+    }
+
+    /// CLI history belongs to milkie's native store, not the API checkpoint
+    /// store. Once used, require the existing layout before launching a child.
+    pub fn prepare_cli_directories(&self, workspace: &Path) -> Result<()> {
+        self.prepare_storage(workspace, true)
+    }
+
+    fn prepare_storage(&self, workspace: &Path, cli: bool) -> Result<()> {
         let root = workspace.join("contexts");
         let own = root.join(&self.id);
         let (native, ledger) = self.directories(workspace);
@@ -79,7 +89,12 @@ impl ExecutionContext {
             private_directory(path, !self.used)?;
         }
         if self.used {
-            for name in ["binding.json", "state.sqlite3"] {
+            let files = if cli {
+                vec!["binding.json"]
+            } else {
+                vec!["binding.json", "state.sqlite3"]
+            };
+            for name in files {
                 let metadata = fs::symlink_metadata(native.join(name))
                     .map_err(|_| Error::Unavailable("原生上下文丢失，须核对后恢复".into()))?;
                 if !metadata.is_file() || metadata.file_type().is_symlink() {
@@ -88,7 +103,13 @@ impl ExecutionContext {
                     ));
                 }
             }
-            private_directory(&native.join("events"), false)?;
+            if cli {
+                for directory in ["sdk", "sessions", "journal", "cwd"] {
+                    private_directory(&native.join(directory), false)?;
+                }
+            } else {
+                private_directory(&native.join("events"), false)?;
+            }
         } else if fs::read_dir(&native)?.next().is_some() || fs::read_dir(&ledger)?.next().is_some()
         {
             return Err(Error::Unavailable(
@@ -97,6 +118,27 @@ impl ExecutionContext {
         }
         Ok(())
     }
+}
+
+/// Use within the launch transaction. A failed resource or credential write
+/// rolls back this mark too; a committed launch can never be retried as fresh.
+pub(crate) fn mark_used(
+    db: &rusqlite::Connection,
+    run: &Run,
+    context: &ExecutionContext,
+) -> Result<ExecutionContext> {
+    let task: Task = load(db, "tasks", &run.task_id)?;
+    let key = context_key(&task, &run.worker_id, &run.configuration_id, &run.purpose)?;
+    let mut current: ExecutionContext = load(db, "execution_contexts", &key)?;
+    if current.id != context.id
+        || current.used != context.used
+        || task.revision != run.task_revision
+    {
+        return Err(Error::Conflict("上下文或任务依据已变化".into()));
+    }
+    current.used = true;
+    save(db, "execution_contexts", &key, &current)?;
+    Ok(current)
 }
 
 fn private_directory(path: &Path, create: bool) -> Result<()> {
@@ -199,15 +241,7 @@ impl Store {
             ));
         }
         crate::runs::check_run_authority(&tx, &run)?;
-        let task: Task = load(&tx, "tasks", &run.task_id)?;
-        let key = context_key(&task, &run.worker_id, &run.configuration_id, &run.purpose)?;
-        let mut current: ExecutionContext = load(&tx, "execution_contexts", &key)?;
-        if current.id != context.id
-            || current.used != context.used
-            || task.revision != run.task_revision
-        {
-            return Err(Error::Conflict("上下文或任务依据已变化".into()));
-        }
+        let current = mark_used(&tx, &run, context)?;
         let configuration: crate::connection::ExecutionConfiguration =
             load(&tx, "execution_configs", &run.configuration_id)?;
         let reference: String = tx
@@ -222,8 +256,6 @@ impl Store {
         if reference.generation != credential_generation {
             return Err(Error::Conflict("API 凭据代次已变化".into()));
         }
-        current.used = true;
-        save(&tx, "execution_contexts", &key, &current)?;
         let record = serde_json::json!({"contextId":current.id,"resume":context.used,"credentialGeneration":credential_generation});
         tx.execute(
             "INSERT INTO api_launches(run_id,data) VALUES(?1,?2)",

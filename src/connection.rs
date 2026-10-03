@@ -27,6 +27,10 @@ pub enum ConnectionSpec {
         runtime: String,
         model: Option<String>,
         image: Option<String>,
+        // Preserve the serialized identity of existing unprepared versions.
+        // Adding/changing a policy creates a new immutable connection version.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        egress_hosts: Option<Vec<String>>,
     },
 }
 impl ConnectionSpec {
@@ -57,6 +61,7 @@ impl ConnectionSpec {
                 runtime,
                 model,
                 image,
+                egress_hosts,
             } => {
                 text(runtime, "CLI runtime", 64)?;
                 if !runtime
@@ -71,10 +76,43 @@ impl ConnectionSpec {
                 if let Some(image) = image {
                     crate::profile::validate_image(image)?;
                 }
+                if let Some(hosts) = egress_hosts {
+                    validate_egress_hosts(hosts)?;
+                }
             }
         }
         Ok(())
     }
+}
+
+fn validate_egress_hosts(hosts: &[String]) -> Result<()> {
+    let valid = !hosts.is_empty()
+        && hosts.len() <= 64
+        && hosts
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            == hosts.len()
+        && hosts.iter().all(|host| {
+            host.len() <= 253
+                && host.contains('.')
+                && host.parse::<std::net::IpAddr>().is_err()
+                && host.split('.').all(|label| {
+                    !label.is_empty()
+                        && label.len() <= 63
+                        && label
+                            .bytes()
+                            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                        && label.as_bytes()[0].is_ascii_alphanumeric()
+                        && label.as_bytes()[label.len() - 1].is_ascii_alphanumeric()
+                })
+        });
+    if !valid {
+        return Err(Error::Invalid(
+            "CLI 出站策略须为 1–64 个不重复的小写精确域名，不接受 IP、通配符或 URL".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

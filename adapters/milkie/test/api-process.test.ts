@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, mkdir, readFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseStart, prepareContext } from '../src/api-process.js';
@@ -42,6 +42,43 @@ test('API process persists bound native context and explicitly resumes its check
     await assert.rejects(prepareContext({...start,resume:true},{...scope,taskId:'other-task'}),/binding_mismatch/);
     assert.equal((await readFile(join(start.contextDirectory,'binding.json'),'utf8')).includes('synthetic-test-secret'),false);
   }finally {await rm(root,{recursive:true,force:true});}
+});
+
+test('API native dialogue continues across deliveries without replaying the previous delivery ledger',async()=>{
+  const {root,start}=await fixture();
+  let effects=0;
+  const tool={name:'message_respond',description:'处理当前消息',inputSchema:{type:'object',properties:{reason:{type:'string'}},required:['reason'],additionalProperties:false}};
+  try {
+    for(let turn=1;turn<=2;turn++) {
+      const currentScope={...scope,runId:`run-${turn}`,deliveryId:`delivery-${turn}`};
+      const context=await prepareContext({...start,resume:turn>1},currentScope);
+      const seen:string[]=[];
+      let requests=0;
+      const gateway:IModelGateway={complete:async request=>{
+        seen.push(JSON.stringify(request));requests++;
+        if(requests===1)return {content:[{type:'tool_use',id:'same-native-call',name:tool.name,input:{reason:`message-${turn}`}}],toolCalls:[{id:'same-native-call',name:tool.name,input:{reason:`message-${turn}`}}],finishReason:'tool_use'};
+        return {content:[{type:'text',text:`answer-${turn}`}],toolCalls:[],finishReason:'end_turn'};
+      },async *stream(){throw new Error('not streaming');}};
+      try {
+        const ledger=await ToolLedger.openDelivery(start.ledgerDirectory,currentScope.deliveryId);
+        const result=await executeApiTurn({workerId:start.workerId,taskId:scope.taskId,runId:currentScope.runId,contextId:start.contextId,
+          goal:start.goal,input:`new-message-${turn}`,skill:start.skill,tools:[tool],gateway,model:{provider:'fixture',adapter:'fixture',model:'fixture'},
+          stateStore:context.store,eventStore:context.events,checkpoint:context.checkpoint,ledger,
+          forward:async operation=>{assert.equal(operation.originatingRunId,currentScope.runId);effects++;return {ok:true,receipt:`receipt-${turn}`};}});
+        assert.equal(result.result.status,'completed');assert.equal(result.recoveredOperations,0);
+        assert.equal(effects,turn);
+        if(turn===2) {
+          // milkie's native turn-end contract archives input + final answer;
+          // tool scratchpad expires, while the operation ledger remains durable.
+          assert.ok(seen[0]?.includes('new-message-1'));assert.ok(seen[0]?.includes('answer-1'));
+          assert.ok(seen[0]?.includes('new-message-2'));
+          const old=join(start.ledgerDirectory,'delivery-1');
+          const record=JSON.parse(await readFile(join(old,(await readdir(old))[0]!),'utf8'));
+          assert.deepEqual(record.result,{ok:true,receipt:'receipt-1'});
+        }
+      }finally{context.store.close();}
+    }
+  }finally{await rm(root,{recursive:true,force:true});}
 });
 
 test('missing native checkpoint and symlink directory do not silently start a fresh context',async()=>{

@@ -1271,6 +1271,7 @@ fn connection_fields_are_exclusive_and_secrets_are_not_configuration() {
                     runtime: "pi".into(),
                     model: None,
                     image: None,
+                    egress_hosts: None,
                 },
             },
         )
@@ -5395,7 +5396,8 @@ fn real_keychain_credentials_are_versioned_private_and_retryable() {
                 specification: atelier::connection::ConnectionSpec::AgentCli {
                     runtime: "pi".into(),
                     model: None,
-                    image: None
+                    image: None,
+                    egress_hosts: None,
                 }
             }
         ),
@@ -9779,6 +9781,9 @@ fn member_skill_bundle_contains_exact_installed_operations_and_only_relevant_gui
 const CLI_RESOURCE_IMAGE: &str =
     "sha256:7a87e3fe2909d0135d9041760b2808e70b9d2afb368e450e01d96b614665d133";
 fn prepared_cli_fixture() -> (Fixture, Run) {
+    prepared_cli_fixture_with_policy(Some(vec!["example.com".into()]))
+}
+fn prepared_cli_fixture_with_policy(egress_hosts: Option<Vec<String>>) -> (Fixture, Run) {
     let mut f = Fixture::new(true);
     f.prepare_digital_leader();
     let connection = f
@@ -9791,6 +9796,7 @@ fn prepared_cli_fixture() -> (Fixture, Run) {
                     runtime: "pi".into(),
                     model: None,
                     image: Some(CLI_RESOURCE_IMAGE.into()),
+                    egress_hosts,
                 },
             },
         )
@@ -9820,6 +9826,124 @@ fn prepared_cli_fixture() -> (Fixture, Run) {
         )
         .unwrap();
     (f, run)
+}
+
+#[test]
+fn cli_egress_policy_is_explicit_versioned_and_cannot_expand_an_existing_run() {
+    use atelier::connection::ConnectionSpec;
+    let old = json!({"transport":"agent-cli","runtime":"pi","model":null,"image":null});
+    let spec: ConnectionSpec = serde_json::from_value(old.clone()).unwrap();
+    spec.validate().unwrap();
+    assert_eq!(
+        serde_json::to_value(spec).unwrap(),
+        old,
+        "old versions keep their serialized fingerprint"
+    );
+    for hosts in [
+        json!([]),
+        json!(["*"]),
+        json!(["*.example.com"]),
+        json!(["127.0.0.1"]),
+        json!(["https://example.com"]),
+        json!(["EXAMPLE.com"]),
+        json!(["example.com."]),
+        json!(["example.com:443"]),
+        json!(["example.com", "example.com"]),
+        json!(["-bad.example"]),
+        json!(["bad-.example"]),
+        json!(["a..example"]),
+        json!(["localhost"]),
+    ] {
+        let mut value = old.clone();
+        value["egress_hosts"] = hosts;
+        assert!(
+            serde_json::from_value::<ConnectionSpec>(value)
+                .unwrap()
+                .validate()
+                .is_err()
+        );
+    }
+    let (mut f, run) = prepared_cli_fixture();
+    let configuration = f
+        .store
+        .execution_configuration(&run.configuration_id)
+        .unwrap();
+    let version = f
+        .store
+        .connection_version(&configuration.connection_version)
+        .unwrap();
+    let updated = f
+        .store
+        .execute(
+            "expand-cli-policy",
+            &Command::ConnectionUpdate {
+                id: version.connection_id.clone(),
+                revision: 1,
+                name: None,
+                specification: Some(ConnectionSpec::AgentCli {
+                    runtime: "pi".into(),
+                    model: None,
+                    image: Some(CLI_RESOURCE_IMAGE.into()),
+                    egress_hosts: Some(vec!["example.com".into(), "another.example".into()]),
+                }),
+            },
+        )
+        .unwrap();
+    assert_ne!(updated["version"]["id"], version.id);
+    let context = f
+        .store
+        .runtime_context(
+            "service",
+            &run.task_id,
+            &run.worker_id,
+            &run.configuration_id,
+            &run.purpose,
+        )
+        .unwrap();
+    let record = f
+        .store
+        .runtime_begin_cli_launch("service", &run.id, "fixture-engine", &context)
+        .unwrap();
+    assert_eq!(
+        record.egress_hosts,
+        vec!["example.com"],
+        "launch uses the run's frozen connection, not current settings"
+    );
+
+    let (mut missing, run) = prepared_cli_fixture_with_policy(None);
+    let context = missing
+        .store
+        .runtime_context(
+            "service",
+            &run.task_id,
+            &run.worker_id,
+            &run.configuration_id,
+            &run.purpose,
+        )
+        .unwrap();
+    assert!(
+        missing
+            .store
+            .runtime_begin_cli_launch("service", &run.id, "fixture-engine", &context)
+            .unwrap_err()
+            .to_string()
+            .contains("出站策略")
+    );
+    assert!(!missing.store.run(&run.id).unwrap().launch_started);
+    assert!(missing.store.cli_resources(&run.id).unwrap().is_none());
+    assert!(
+        !missing
+            .store
+            .runtime_context(
+                "service",
+                &run.task_id,
+                &run.worker_id,
+                &run.configuration_id,
+                &run.purpose
+            )
+            .unwrap()
+            .used
+    );
 }
 
 #[test]
@@ -9865,6 +9989,7 @@ fn cli_resources_registration_is_atomic_bound_to_frozen_configuration_and_gates_
         .runtime_begin_cli_resources("service", &run.id, "fixture-engine")
         .unwrap();
     assert_eq!(record.image, CLI_RESOURCE_IMAGE);
+    assert_eq!(record.egress_hosts, vec!["example.com"]);
     assert_eq!(record.run_id, run.id);
     assert_eq!(
         record.labels()["atelier.workspace"],
@@ -9894,6 +10019,97 @@ fn cli_resources_registration_is_atomic_bound_to_frozen_configuration_and_gates_
     let shown = acceptance_cli(&f, "unused", &["run", "show", &run.id]);
     assert_eq!(shown["data"]["cliResources"]["resourcesStopped"], false);
     assert!(shown["data"]["apiExecution"].is_null());
+}
+
+#[test]
+fn cli_launch_context_use_and_resource_intent_commit_together_and_missing_history_blocks() {
+    use std::fs;
+    let (mut f, run) = prepared_cli_fixture();
+    let context = f
+        .store
+        .runtime_context(
+            "service",
+            &run.task_id,
+            &run.worker_id,
+            &run.configuration_id,
+            &run.purpose,
+        )
+        .unwrap();
+    context.prepare_cli_directories(f.dir.path()).unwrap();
+    let sql = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3")).unwrap();
+    sql.execute_batch("CREATE TRIGGER reject_cli_launch BEFORE INSERT ON cli_resources BEGIN SELECT RAISE(ABORT,'fixture'); END;").unwrap();
+    assert!(
+        f.store
+            .runtime_begin_cli_launch("service", &run.id, "fixture-engine", &context)
+            .is_err()
+    );
+    assert!(!f.store.run(&run.id).unwrap().launch_started);
+    assert!(f.store.cli_resources(&run.id).unwrap().is_none());
+    assert!(
+        !f.store
+            .runtime_context(
+                "service",
+                &run.task_id,
+                &run.worker_id,
+                &run.configuration_id,
+                &run.purpose
+            )
+            .unwrap()
+            .used
+    );
+    sql.execute_batch("DROP TRIGGER reject_cli_launch").unwrap();
+    let mut foreign = context.clone();
+    foreign.id = "foreign-context".into();
+    assert!(
+        f.store
+            .runtime_begin_cli_launch("service", &run.id, "fixture-engine", &foreign)
+            .is_err()
+    );
+    let record = f
+        .store
+        .runtime_begin_cli_launch("service", &run.id, "fixture-engine", &context)
+        .unwrap();
+    assert_eq!(record.context_id.as_deref(), Some(context.id.as_str()));
+    assert_eq!(record.resume, Some(false));
+    drop(f.store);
+    f.store = Store::open(f.dir.path()).unwrap();
+    let used = f
+        .store
+        .runtime_context(
+            "service",
+            &run.task_id,
+            &run.worker_id,
+            &run.configuration_id,
+            &run.purpose,
+        )
+        .unwrap();
+    assert!(used.used);
+    assert!(
+        used.prepare_cli_directories(f.dir.path()).is_err(),
+        "committed launch cannot silently recreate absent native history"
+    );
+    let (native, _) = used.directories(f.dir.path());
+    fs::write(
+        native.join("binding.json"),
+        "fixture binding; adapter validates its content",
+    )
+    .unwrap();
+    for name in ["sdk", "sessions", "journal", "cwd"] {
+        fs::create_dir(native.join(name)).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(native.join(name), fs::Permissions::from_mode(0o700)).unwrap();
+        }
+    }
+    used.prepare_cli_directories(f.dir.path()).unwrap();
+    assert!(
+        used.prepare_directories(f.dir.path()).is_err(),
+        "CLI layout cannot satisfy the API checkpoint contract"
+    );
+    fs::remove_dir(native.join("sessions")).unwrap();
+    assert!(used.prepare_cli_directories(f.dir.path()).is_err());
+    assert!(!native.join("sessions").exists());
 }
 
 #[cfg(unix)]

@@ -26,6 +26,12 @@ pub struct CliResources {
     pub internal_network: String,
     pub egress_network: String,
     pub image: String,
+    #[serde(default)]
+    pub egress_hosts: Vec<String>,
+    #[serde(default)]
+    pub context_id: Option<String>,
+    #[serde(default)]
+    pub resume: Option<bool>,
     pub resources_stopped: bool,
     pub diagnostic: Option<String>,
 }
@@ -77,6 +83,28 @@ impl Store {
         id: &str,
         engine_id: &str,
     ) -> Result<CliResources> {
+        self.begin_cli_resources(epoch, id, engine_id, None)
+    }
+
+    /// Production launch binds the native context in the same transaction as
+    /// resource ownership and Run intent, before any external resource exists.
+    pub fn runtime_begin_cli_launch(
+        &mut self,
+        epoch: &str,
+        id: &str,
+        engine_id: &str,
+        context: &crate::execution_context::ExecutionContext,
+    ) -> Result<CliResources> {
+        self.begin_cli_resources(epoch, id, engine_id, Some(context))
+    }
+
+    fn begin_cli_resources(
+        &mut self,
+        epoch: &str,
+        id: &str,
+        engine_id: &str,
+        context: Option<&crate::execution_context::ExecutionContext>,
+    ) -> Result<CliResources> {
         validate_engine_id(engine_id)?;
         let tx = self
             .connection
@@ -98,16 +126,26 @@ impl Store {
             load(&tx, "connection_versions", &config.connection_version)?;
         version.specification.validate()?;
         let ConnectionSpec::AgentCli {
-            image: Some(image), ..
+            image: Some(image),
+            egress_hosts,
+            ..
         } = version.specification
         else {
             return Err(Error::Unavailable(
                 "CLI 隔离资源需要冻结的 agent-cli 连接与固定镜像".into(),
             ));
         };
+        if context.is_some() && egress_hosts.is_none() {
+            return Err(Error::Unavailable(
+                "CLI 冻结连接缺少显式出站策略，不能启动".into(),
+            ));
+        }
         if config.worker_id != run.worker_id {
             return Err(Error::Forbidden("CLI 执行配置不属于该成员".into()));
         }
+        let native = context
+            .map(|context| crate::execution_context::mark_used(&tx, &run, context))
+            .transpose()?;
         let record = CliResources {
             run_id: run.id.clone(),
             workspace_id: tx.query_row("SELECT id FROM workspace", [], |r| r.get(0))?,
@@ -118,6 +156,9 @@ impl Store {
             internal_network: format!("atelier-inner-{}", run.id),
             egress_network: format!("atelier-outer-{}", run.id),
             image,
+            egress_hosts: egress_hosts.unwrap_or_default(),
+            context_id: native.map(|context| context.id),
+            resume: context.map(|context| context.used),
             resources_stopped: false,
             diagnostic: None,
         };
