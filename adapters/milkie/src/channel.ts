@@ -169,19 +169,21 @@ export class AdapterChannel {
       pending.resolve(frame.payload);
     }
   }
-  readonly forward:ForwardTool=(operation:ToolOperation,signal?:AbortSignal):Promise<unknown>=>{
+  readonly forward:ForwardTool=(operation:ToolOperation,signal?:AbortSignal):Promise<unknown>=>this.request(operation.operationId,'tool.request',operation,signal);
+  readonly reconcile=(deliveryId:string,operation:ToolOperation,signal?:AbortSignal):Promise<unknown>=>this.request(operation.operationId,'tool.reconcile',{deliveryId,operation},signal);
+  private request(operationId:string,kind:string,payload:unknown,signal?:AbortSignal):Promise<unknown> {
     if(this.closed||this.signal.aborted||signal?.aborted) return Promise.reject(this.failure??new Error('run_cancelled'));
-    if(this.pending.has(operation.operationId)) return Promise.reject(new Error('tool_operation_already_in_flight'));
+    if(this.pending.has(operationId)) return Promise.reject(new Error('tool_operation_already_in_flight'));
     return new Promise<unknown>((resolve,reject)=>{
-      const onAbort=()=>{this.pending.delete(operation.operationId);reject(new Error('tool_request_aborted'));};
+      const onAbort=()=>{this.pending.delete(operationId);reject(new Error('tool_request_aborted'));};
       const cleanup=()=>signal?.removeEventListener('abort',onAbort);
-      this.pending.set(operation.operationId,{resolve:value=>{cleanup();resolve(value);},reject:error=>{cleanup();reject(error);}});
+      this.pending.set(operationId,{resolve:value=>{cleanup();resolve(value);},reject:error=>{cleanup();reject(error);}});
       signal?.addEventListener('abort',onAbort,{once:true});
-      void this.send(operation.operationId,'tool.request',operation).catch(error=>{
-        cleanup();this.pending.delete(operation.operationId);reject(error);
+      void this.send(operationId,kind,payload).catch(error=>{
+        cleanup();this.pending.delete(operationId);reject(error);
       });
     });
-  };
+  }
   async finish(terminal:Terminal):Promise<void> {
     await this.send('terminal','terminal',terminal);
     this.closed=true;

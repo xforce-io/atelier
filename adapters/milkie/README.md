@@ -107,3 +107,5 @@ Rust `connection prepare` 核对上述本地固定镜像，并为指定 Worker/�
 `npm run test:cli-login` 通过 Python 3 创建真实 PTY，运行实际 Rust CLI 和 Docker。Pi/Grok 登录程序使用明确的合成替身，不读取用户登录；检查请求重放、代次、取消回收和无业务工作副作用，不证明原生认证通过。
 
 运行服务现已复用成员通道调度 agent CLI，冻结登录代次和创建许可，挂载 Worker 登录目录与当前执行上下文。`npm run test:cli-runtime` 通过真实 CLI/PTY/Docker/服务验证受控工具、两轮投递续接、不同 Task 会话隔离和停服资源回收；原生 Pi 协议及登录使用明确替身，不能据此声称真实模型或两种 CLI 验收完成。
+
+跨投递旧 pending 现经核心 `tool.reconcile` 只读核对，生产 API/CLI 不通过普通工具请求重做旧操作。已提交保留原结果，未提交明确返回 not_executed；错误上下文或撤权拒绝。旧 pending 在后续原生轮次持久成功后才标 completed，覆盖核对至输入保存之间的中断；原生会话仍由 milkie 续接，不从工作消息重建。

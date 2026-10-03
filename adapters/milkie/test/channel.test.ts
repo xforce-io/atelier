@@ -88,3 +88,15 @@ test('partial incoming frame survives a stop-independent event and truncated EOF
   const rejected=assert.rejects(call,/member_channel_closed/);await h.next();
   h.input.write('{"protocolVersion":1');h.input.end();await rejected;h.output.destroy();
 });
+
+test('reconciliation retains current pipe scope while naming the historical delivery separately',async()=>{
+  const h=await started();
+  const operation={operationId:'old-operation',originatingRunId:'old-run',toolCallId:'old-call',name:'message_send',input:{}};
+  const pending=h.channel.reconcile('old-delivery',operation);
+  const frame=await h.next();
+  assert.equal(frame.kind,'tool.reconcile');assert.equal(frame.deliveryId,'delivery');
+  assert.deepEqual(frame.payload,{deliveryId:'old-delivery',operation});
+  h.send(3,'tool.result',{ok:false,error:{code:'not_executed'}},operation.operationId);
+  assert.deepEqual(await pending,{ok:false,error:{code:'not_executed'}});
+  await h.channel.finish({stopReason:'completed',nativeStopReason:'fixture',recoveredOperations:1});await h.next();h.output.destroy();
+});

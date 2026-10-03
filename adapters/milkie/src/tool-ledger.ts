@@ -19,6 +19,7 @@ interface Record {
 }
 export interface RecoveredOperation { operationId: string; name: string; result: unknown; }
 export type ForwardTool = (operation: ToolOperation, signal?: AbortSignal) => Promise<unknown>;
+export type ReconcileTool = (deliveryId: string, operation: ToolOperation, signal?: AbortSignal) => Promise<unknown>;
 const limit = 256 * 1024;
 function stable(value: unknown): string {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
@@ -48,18 +49,30 @@ async function syncDirectory(path: string): Promise<void> {
  * transport identity, never infers equivalence between newly generated calls. */
 export class ToolLedger {
   private tail: Promise<unknown> = Promise.resolve();
+  private contextRoot?: string;
+  private foreign: {ledger:ToolLedger; file:string; record:Record; result:unknown}[]=[];
+  get foreignRecovery(): RecoveredOperation[] {
+    return this.foreign.map(({record,result})=>({operationId:record.operation.operationId,name:record.operation.name,result:structuredClone(result)}));
+  }
   constructor(private readonly directory: string, private readonly deliveryId: string) { identifier(deliveryId); }
   /** Native dialogue spans deliveries; operation identity does not. The core
    * owns an exclusive context slot while opening. Old development layouts are
    * moved without replaying calls; an unresolved foreign delivery blocks all
    * new model work until the core can reconcile it under its original scope. */
-  static async openDelivery(root: string, deliveryId: string): Promise<ToolLedger> {
+  static async openDelivery(root: string, deliveryId: string, reconcile?: ReconcileTool): Promise<ToolLedger> {
     deliveryDirectoryId(deliveryId);
     const stat = await fs.lstat(root);
     if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0) throw new Error('tool_ledger_invalid');
     const legacy: { file: string; name: string; record: Record }[] = [];
+    const pending=new Map<string,Record>();
     const check = (record: Record) => {
-      if (record.deliveryId !== deliveryId && record.state === 'pending') throw new Error('tool_foreign_delivery_unreconciled');
+      if (record.deliveryId !== deliveryId && record.state === 'pending') {
+        if(!reconcile)throw new Error('tool_foreign_delivery_unreconciled');
+        const key=stable([record.deliveryId,record.operation.originatingRunId,record.operation.toolCallId]);
+        const prior=pending.get(key);
+        if(prior&&stable(prior)!==stable(record))throw new Error('tool_ledger_migration_conflict');
+        pending.set(key,record);
+      }
     };
     // Validate everything before migrating anything. Temporary files precede
     // the atomic pending record and therefore have never authorized forwarding.
@@ -106,7 +119,38 @@ export class ToolLedger {
     }
     const ledger = new ToolLedger(join(root,deliveryId),deliveryId);
     await ledger.ensure();
+    ledger.contextRoot=root;
+    // Keep foreign records pending until a later native turn has durably
+    // consumed their outcomes. A crash before that turn re-queries read-only;
+    // it cannot erase the recovery input or reissue a business operation.
+    for(const record of pending.values()) {
+      const previous=new ToolLedger(join(root,record.deliveryId),record.deliveryId);
+      const result=await reconcile!(record.deliveryId,structuredClone(record.operation));
+      if(Buffer.byteLength(stable(result))>limit)throw new Error('tool_result_too_large');
+      ledger.foreign.push({ledger:previous,file:previous.file(record.operation.originatingRunId,record.operation.toolCallId),record,result});
+    }
     return ledger;
+  }
+  async confirmForeignRecovery():Promise<void> {
+    for(const item of this.foreign) {
+      const current=await item.ledger.read(item.file);
+      if(!current||stable(current)!==stable(item.record))throw new Error('tool_recovery_record_changed');
+      await item.ledger.write(item.file,{...current,state:'completed',result:item.result});
+      item.record={...current,state:'completed',result:item.result};
+    }
+    this.foreign=[];
+  }
+  async reconcileRecordedFor(deliveryId:string,runId:string,callId:string,name:string,input:unknown,reconcile:ReconcileTool):Promise<RecoveredOperation|undefined> {
+    deliveryDirectoryId(deliveryId);
+    if(deliveryId===this.deliveryId)return this.reconcileRecorded(runId,callId,name,input,op=>reconcile(deliveryId,op));
+    if(!this.contextRoot)throw new Error('cli_recovery_binding_mismatch');
+    const previous=new ToolLedger(join(this.contextRoot,deliveryId),deliveryId);
+    const record=await previous.read(previous.file(runId,callId));
+    if(!record)return undefined;
+    if(record.fingerprint!==hash(stable([name,input])))throw new Error('tool_call_identity_conflict');
+    const result=await reconcile(deliveryId,structuredClone(record.operation));
+    // Foreign pending completion is deferred until confirmForeignRecovery.
+    return {operationId:record.operation.operationId,name:record.operation.name,result};
   }
   private serial<T>(action: () => Promise<T>): Promise<T> {
     const next = this.tail.then(action);

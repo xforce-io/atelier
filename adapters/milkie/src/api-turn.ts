@@ -21,6 +21,7 @@ export interface ApiTurn {
   eventStore: ICrashSafeEventStore;
   ledger: ToolLedger;
   forward: ForwardTool;
+  reconcile?: ForwardTool;
   checkpoint?: AgentCheckpoint;
   signal?: AbortSignal;
 }
@@ -99,7 +100,7 @@ export async function executeApiTurn(turn: ApiTurn): Promise<{ result: AgentResu
     // A crash after durable reconciliation but before checkpointing the next
     // input must not lose that result. Recheck even completed records under
     // this delivery's current authorization before exposing them to the model.
-    const recovered = await turn.ledger.recover(forward,true);
+    const recovered = [...turn.ledger.foreignRecovery, ...await turn.ledger.recover(turn.reconcile??forward,true)];
     const recoveredOperations = recovered.length;
     const input = recovered.length === 0 ? turn.input : JSON.stringify({workMessage:turn.input,reconciledOperations:recovered});
     const runtime = new AgentRuntime({
@@ -119,6 +120,7 @@ export async function executeApiTurn(turn: ApiTurn): Promise<{ result: AgentResu
     const result = await runtime.run(input);
     await turn.eventStore.confirmRunDurable(turn.runId);
     if (transportFailed) throw new Error('tool_result_uncertain');
+    if(result.stopReason==='model_stop')await turn.ledger.confirmForeignRecovery();
     return {result,recoveredOperations,stopReason:toolBudgetExceeded?'budget_exhausted':deadlineExceeded?'deadline':result.stopReason,stopCode:toolBudgetExceeded?'TOOL_CALL_BUDGET_EXCEEDED':deadlineExceeded?'RUN_DEADLINE_EXCEEDED':result.stopCode};
   } finally {
     clearTimeout(deadlineTimer);

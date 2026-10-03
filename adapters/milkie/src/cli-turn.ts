@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { ExecutionClient, ToolSchema, ToolHandler } from '@freemanxu/milkie';
 import { CliTools } from './cli-tools.js';
-import { ToolLedger, type ForwardTool, type RecoveredOperation } from './tool-ledger.js';
+import { ToolLedger, type ForwardTool, type ReconcileTool, type RecoveredOperation } from './tool-ledger.js';
 import type { Scope, Terminal } from './channel.js';
 
 export interface CliTurn {
@@ -20,6 +20,7 @@ export interface CliTurn {
   input: string;
   skill: string;
   forward: ForwardTool;
+  reconcile?: ReconcileTool;
   signal: AbortSignal;
 }
 interface Launch extends Scope { nativeContextId: string; }
@@ -81,7 +82,8 @@ export async function executeCliTurn(turn: CliTurn): Promise<Terminal> {
   // Include completed records: a crash after ledger completion but before the
   // next prompt must not erase the checked outcome. Core reauthorizes every
   // query, so cached data never leaks through revoked permissions.
-  const transportRecovery = await turn.ledger.recover(forward, true);
+  const reconcile:ReconcileTool=async(delivery,operation)=>{ensureActive();return turn.reconcile?turn.reconcile(delivery,operation,turn.signal):forward(operation);};
+  const transportRecovery = [...turn.ledger.foreignRecovery,...await turn.ledger.recover(op=>reconcile(scope.deliveryId,op), true)];
   const callsToReconcile = new Map(execution.pendingToolCalls(nativeContextId).map(call => [call.callId, call]));
   for (const saved of recoveries) {
     const call = execution.toolCall(saved.callId);
@@ -92,11 +94,11 @@ export async function executeCliTurn(turn: CliTurn): Promise<Terminal> {
     ensureActive();
     if (!identifier(call.runId)) throw failed('cli_binding_invalid');
     const launch = await read(join(turn.journalDirectory, `${call.runId}.json`)) as Launch;
-    if (launch.nativeContextId !== nativeContextId || launch.taskId !== scope.taskId || launch.deliveryId !== scope.deliveryId || !identifier(launch.runId)) throw failed('cli_recovery_binding_mismatch');
+    if (launch.nativeContextId !== nativeContextId || launch.taskId !== scope.taskId || !identifier(launch.deliveryId) || (launch.deliveryId!==scope.deliveryId&&!turn.reconcile) || !identifier(launch.runId)) throw failed('cli_recovery_binding_mismatch');
     const previous = execution.query(call.runId);
     if (!previous?.stopped || previous.status === 'starting' || previous.status === 'running') throw failed('cli_previous_run_not_stopped');
     {
-      const operation = await turn.ledger.reconcileRecorded(launch.runId, call.callId, call.name, call.input, forward);
+      const operation = await turn.ledger.reconcileRecordedFor(launch.deliveryId,launch.runId, call.callId, call.name, call.input,reconcile);
       // No host journal means no core request was issued. Never dispatch that
       // previously queued request for the first time during recovery.
       const output = JSON.stringify(operation ? { status: 'reconciled', ...operation } : { status: 'not_executed', reason: 'host_stopped_before_dispatch' });
@@ -146,6 +148,7 @@ export async function executeCliTurn(turn: CliTurn): Promise<Terminal> {
       if (record.stopped && record.status !== 'starting' && record.status !== 'running') {
         if (uncertain) throw failed('tool_result_uncertain');
         const stopReason: Terminal['stopReason'] = exceeded ? 'budget_exhausted' : record.status === 'succeeded' ? 'completed' : record.status === 'cancelled' ? 'cancelled' : record.status === 'timed_out' ? 'deadline' : 'failed';
+        if(stopReason==='completed')await turn.ledger.confirmForeignRecovery();
         return { stopReason, ...(exceeded ? { stopCode: 'TOOL_CALL_BUDGET_EXCEEDED' } : record.code ? { stopCode: record.code } : {}), nativeStopReason: record.status, recoveredOperations: recovered.size };
       }
       if (record.status === 'unknown' || turn.signal.aborted || Date.now() >= deadline) {

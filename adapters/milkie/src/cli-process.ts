@@ -74,10 +74,10 @@ export async function runCliProcess(channel: AdapterChannel): Promise<void> {
   const start = parseCliStart(await channel.start());
   if (channel.signal.aborted) throw new Error('run_cancelled_before_start');
   const context = await prepareCliContext(start, channel.scope);
-  const ledger = await ToolLedger.openDelivery(start.ledgerDirectory, channel.scope.deliveryId);
+  const ledger = await ToolLedger.openDelivery(start.ledgerDirectory, channel.scope.deliveryId,(delivery,operation)=>channel.reconcile(delivery,operation,channel.signal));
   // Each new delivery has its own transport ledger, while native dialogue is
   // retained across deliveries. A retry reopens this same delivery directory.
   const terminal = await executeCliTurn({ ...context, scope: channel.scope, ledger,
-    tools: start.tools, goal: start.goal, input: start.input, skill: start.skill, forward: channel.forward, signal: channel.signal });
+    tools: start.tools, goal: start.goal, input: start.input, skill: start.skill, forward: channel.forward, reconcile:channel.reconcile, signal: channel.signal });
   await channel.finish(terminal);
 }

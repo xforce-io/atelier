@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, rm, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MemoryStore, JsonlEventStore, SQLiteStore, type IModelGateway, type ModelRequest, type ModelResponse } from '@freemanxu/milkie';
@@ -183,4 +183,21 @@ test('cancelling an in-flight core call leaves it pending and never issues a rep
     const recovered=await new ToolLedger(join(directory,'ledger'),'delivery-one').recover(async()=>({ok:true}));
     assert.equal(recovered.length,1);
   } finally {await rm(directory,{recursive:true,force:true});}
+});
+
+test('API recovery from another delivery reaches native input without executing the old operation',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'atelier-api-foreign-'));
+  try {
+    const root=join(directory,'ledger');await mkdir(root,{mode:0o700});
+    const old=await ToolLedger.openDelivery(root,'old-delivery');let operation:ToolOperation|undefined;
+    await assert.rejects(old.call('old-run','old-call','message_respond',{reason:'old'},async saved=>{operation=saved;throw new Error('lost');}));
+    let queries=0;
+    const ledger=await ToolLedger.openDelivery(root,'new-delivery',async(delivery,saved)=>{queries++;assert.equal(delivery,'old-delivery');assert.deepEqual(saved,operation);return {ok:false,error:{code:'not_executed'}};});
+    const gateway=new Gateway([done()]);
+    const turn=options(directory,gateway,async()=>{throw new Error('must not replay a business effect');});
+    const result=await executeApiTurn({...turn,runId:'new-run',ledger,reconcile:async()=>{throw new Error('new delivery has no old calls');}});
+    assert.equal(result.recoveredOperations,1);assert.equal(queries,1);
+    assert.ok(JSON.stringify(gateway.requests[0]).includes('not_executed'));
+    assert.equal((await ToolLedger.openDelivery(root,'later-delivery')).foreignRecovery.length,0);
+  }finally{await rm(directory,{recursive:true,force:true});}
 });

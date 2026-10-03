@@ -93,7 +93,9 @@ impl Terminal {
             || self.native_stop_reason.is_empty()
             || self.native_stop_reason.len() > 128
             || self.stop_code.as_ref().is_some_and(|s| s.len() > 128)
-            || self.recovered_operations > 100
+            // Recovery can span multiple earlier Runs. It is bounded by the
+            // private-channel frame budget, not the new Run's 100 tool calls.
+            || self.recovered_operations > MAX_FRAMES as u32
         {
             return Err(protocol_error());
         }
@@ -323,6 +325,23 @@ pub async fn serve<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
                 // A lost pipe never cancels a database job already accepted.
                 // Repeated frames still recheck current authorization in core.
                 let result = database.member_call(bound, operation).await?;
+                writer
+                    .send(&frame.request_id, "tool.result", result)
+                    .await?;
+            }
+            "tool.reconcile" => {
+                if stopping {
+                    return Err(Error::Conflict("停止中的接入不能核对旧调用".into()));
+                }
+                let request: crate::member::ReconcileOperation =
+                    serde_json::from_value(frame.payload).map_err(|_| protocol_error())?;
+                if request.operation.operation_id != frame.request_id {
+                    return Err(protocol_error());
+                }
+                let bound = binding.clone();
+                let result = database
+                    .call(move |store| store.member_reconcile(&bound, &request))
+                    .await?;
                 writer
                     .send(&frame.request_id, "tool.result", result)
                     .await?;

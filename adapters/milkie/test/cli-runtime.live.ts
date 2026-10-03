@@ -45,11 +45,21 @@ test('service dispatches CLI mailbox tools, resumes per-task sessions, and stops
     assert.equal(results.length,2);assert.ok(results.every((r:{ok:boolean})=>r.ok),JSON.stringify(results));
     const binding=await readFile(join(native,'binding.json'),'utf8');
     const sessions=await readdir(join(native,'sessions'));
+    // Explicit crash-window injection: core effects exist, while the host
+    // journal has not saved their replies. No user workspace is involved.
+    const ledgerRoot=join(workspace,'contexts',contexts[0]!,'ledger');
+    const oldDelivery=(await readdir(ledgerRoot))[0]!;
+    const oldFiles=await readdir(join(ledgerRoot,oldDelivery));
+    for(const file of oldFiles){const path=join(ledgerRoot,oldDelivery,file);const record=JSON.parse(await readFile(path,'utf8'));record.state='pending';delete record.result;await writeFile(path,JSON.stringify(record),{mode:0o600});}
     // A new ordinary message must reuse this context but get a separate ledger.
     await cli(workspace,'--request-id','note','message','send','--task',first.task.id,'--recipient',worker.id,'--kind','work.note','--body','继续核对');
     await until(()=>cli(workspace,'mailbox','list','--worker',worker.id),v=>v.length===2&&v.every((r:{status:string})=>r.status==='handled'));
     assert.equal(await readFile(join(native,'binding.json'),'utf8'),binding);
     assert.deepEqual(await readdir(join(native,'sessions')),sessions);
+    const recoveredPrompt=JSON.parse(await readFile(join(native,'cwd','last-prompt.json'),'utf8'));
+    assert.equal(recoveredPrompt.reconciledOperations.length,2);
+    assert.ok(recoveredPrompt.reconciledOperations.every((item:{result:{ok:boolean}})=>item.result.ok));
+    for(const file of oldFiles)assert.equal(JSON.parse(await readFile(join(ledgerRoot,oldDelivery,file),'utf8')).state,'completed');
     assert.equal((await readdir(join(workspace,'contexts',contexts[0]!,'ledger'))).length,2);
     // Same Worker, different Task: independent session mount with shared login.
     const second=await cli(workspace,'--request-id','second-task','task','create','--team',team.id,'--goal','另一个任务');
@@ -65,7 +75,7 @@ test('service dispatches CLI mailbox tools, resumes per-task sessions, and stops
     assert.equal(await docker('network','ls','--filter',`label=atelier.workspace=${initialized.id}`,'--format','{{.ID}}'),'');
     const login=(await cli(workspace,'connection','show',connection.id)).cliEnvironments[0];assert.equal(login.loginGeneration,1);assert.equal(login.loginMaterialReady,true);
     const evidence=resolve(`../../.agents/verify-runs/1/cli-runtime-${randomUUID()}.json`);
-    await writeFile(evidence,JSON.stringify({kind:'development_integration',image,actualService:true,tools:true,contextReuse:true,taskIsolation:true,stopCleanup:true,nativeCli:false,model:false},null,2));
+    await writeFile(evidence,JSON.stringify({kind:'development_integration',image,actualService:true,tools:true,contextReuse:true,foreignReconciliation:true,taskIsolation:true,stopCleanup:true,nativeCli:false,model:false},null,2));
     console.log(`evidence: ${evidence}`);complete=true;
   } finally {
     if(service)await cli(workspace,'runtime','stop').catch(()=>{});

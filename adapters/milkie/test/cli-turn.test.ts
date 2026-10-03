@@ -133,3 +133,29 @@ test('foreign pending delivery prevents a new native execution and is not reassi
     assert.equal(f.options.execution.toolCall(callId)?.status,'pending');
   } finally { await f.cleanup(); }
 });
+
+test('a different delivery reconciles old SDK and host journals read-only before continuing native history',async()=>{
+  const f=await fixture();
+  try {
+    const ledgerRoot=join(f.root,'ledger');
+    f.options.ledger=await ToolLedger.openDelivery(ledgerRoot,'delivery');
+    const effects=new Map<string,unknown>();
+    f.options.forward=async operation=>{f.operations.push(operation);effects.set(operation.operationId,{ok:true,reference:'committed-once'});throw new Error('lost reply');};
+    f.options.input=JSON.stringify({calls:[call]});
+    await assert.rejects(executeCliTurn(f.options),/tool_result_uncertain/);
+    const session=f.options.execution.getContext(f.options.nativeContextId).nativeSessionId;
+    let queries=0;
+    const reconcile=async(delivery:string,operation:ToolOperation)=>{queries++;assert.equal(delivery,'delivery');assert.deepEqual(operation,f.operations[0]);return effects.get(operation.operationId);};
+    const ledger=await ToolLedger.openDelivery(ledgerRoot,'different-delivery',reconcile);
+    assert.equal(ledger.foreignRecovery.length,1);
+    const terminal=await executeCliTurn({...f.options,scope:{...f.options.scope,runId:'new-run',deliveryId:'different-delivery'},ledger,reconcile,input:JSON.stringify({calls:[]}),forward:async()=>{throw new Error('no new call expected');}});
+    assert.equal(terminal.stopReason,'completed');assert.equal(terminal.recoveredOperations,1);
+    assert.equal(f.operations.length,1);assert.ok(queries>=1);assert.equal(effects.size,1);
+    assert.equal(f.options.execution.getContext(f.options.nativeContextId).nativeSessionId,session);
+    assert.equal(f.options.execution.pendingToolCalls(f.options.nativeContextId).length,0);
+    const prompt=JSON.parse(await readFile(join(f.root,'cwd','last-prompt.json'),'utf8'));
+    assert.equal(prompt.reconciledOperations[0].result.reference,'committed-once');
+    const oldFile=(await readdir(join(ledgerRoot,'delivery')))[0]!;
+    assert.equal(JSON.parse(await readFile(join(ledgerRoot,'delivery',oldFile),'utf8')).state,'completed');
+  }finally{await f.cleanup();}
+});

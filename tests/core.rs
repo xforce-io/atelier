@@ -8851,6 +8851,16 @@ fn mailbox_retry_continues_advanced_intake_without_replaying_committed_operation
     let messages = f.store.task(&task.id).unwrap().messages_used;
     assert_eq!(f.store.member_call(&binding, &intake).unwrap(), accepted);
     assert_eq!(f.store.member_call(&binding, &op).unwrap(), sent);
+    let never_submitted = member_operation(
+        &run,
+        "never-submitted-before-crash",
+        "message_send",
+        json!({"recipient":f.human,"kind":"work.note","body":"不能在新 Run 补执行"}),
+    );
+    assert!(matches!(
+        f.store.member_call(&binding, &never_submitted),
+        Err(Error::Conflict(_))
+    ));
     assert_eq!(f.store.task(&task.id).unwrap().revision, 3);
     assert_eq!(f.store.task(&task.id).unwrap().messages_used, messages);
     assert_eq!(
@@ -10482,4 +10492,121 @@ fn cli_production_launch_binds_login_generation_and_ungranted_crash_releases_no_
             .runtime_authorize_cli_creation("service", &run.id)
             .is_err()
     );
+}
+
+#[test]
+fn foreign_delivery_reconciliation_is_read_only_context_bound_and_reauthorizes() {
+    use atelier::member::ReconcileOperation;
+    let mut f = Fixture::new(true);
+    let (old, binding) = f.running_member();
+    let send = member_operation(
+        &old,
+        "committed",
+        "message_send",
+        json!({"recipient":f.human,"kind":"work.note","body":"只发送一次"}),
+    );
+    let saved = f.store.member_call(&binding, &send).unwrap();
+    let next_message = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(
+                &old,
+                "self-message",
+                "message_send",
+                json!({"recipient":old.worker_id,"kind":"work.note","body":"后续投递"}),
+            ),
+        )
+        .unwrap();
+    let next_delivery = next_message["data"]["deliveryId"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    f.store
+        .member_call(
+            &binding,
+            &member_operation(
+                &old,
+                "wait",
+                "message_respond",
+                json!({"kind":"wait","reason":"fixture","handler":f.human}),
+            ),
+        )
+        .unwrap();
+    f.store
+        .runtime_run_observed_stopped("service", &old.id, "fixture stopped")
+        .unwrap();
+    let next = f
+        .store
+        .runtime_claim("service", &next_delivery, &old.configuration_id)
+        .unwrap();
+    f.store.runtime_begin_launch("service", &next.id).unwrap();
+    f.store
+        .runtime_child_started("service", &next.id, 322, "fixture next")
+        .unwrap();
+    let current = f.store.bind_member("service", &next.id).unwrap();
+    let sql = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3")).unwrap();
+    // Explicit context metadata; no credential/model process in this core test.
+    for run in [&old.id, &next.id] {
+        sql.execute(
+            "INSERT INTO api_launches(run_id,data) VALUES(?1,?2)",
+            rusqlite::params![run, json!({"contextId":"fixture-context"}).to_string()],
+        )
+        .unwrap();
+    }
+    let request = ReconcileOperation {
+        delivery_id: old.delivery_id.clone(),
+        operation: send.clone(),
+    };
+    let counts = || -> (i64, i64) {
+        (
+            sql.query_row("SELECT count(*) FROM member_requests", [], |r| r.get(0))
+                .unwrap(),
+            sql.query_row("SELECT count(*) FROM messages", [], |r| r.get(0))
+                .unwrap(),
+        )
+    };
+    let before = counts();
+    assert_eq!(f.store.member_reconcile(&current, &request).unwrap(), saved);
+    assert_eq!(f.store.member_reconcile(&current, &request).unwrap(), saved);
+    let missing = ReconcileOperation {
+        delivery_id: old.delivery_id.clone(),
+        operation: member_operation(
+            &old,
+            "never-submitted",
+            "message_send",
+            json!({"recipient":f.human,"kind":"work.note","body":"不得补执行"}),
+        ),
+    };
+    assert_eq!(
+        f.store.member_reconcile(&current, &missing).unwrap()["error"]["code"],
+        "not_executed"
+    );
+    assert_eq!(counts(), before);
+    let mut bad = request.clone();
+    bad.operation.input["body"] = json!("不同内容");
+    assert!(f.store.member_reconcile(&current, &bad).is_err());
+    bad = request.clone();
+    bad.delivery_id = next.delivery_id.clone();
+    assert!(f.store.member_reconcile(&current, &bad).is_err());
+    bad = request.clone();
+    bad.operation.operation_id = "invented-operation".into();
+    assert!(f.store.member_reconcile(&current, &bad).is_err());
+    sql.execute("UPDATE api_launches SET data=json_set(data,'$.contextId','foreign-context') WHERE run_id=?1",[&old.id]).unwrap();
+    assert!(f.store.member_reconcile(&current, &request).is_err());
+    sql.execute("UPDATE api_launches SET data=json_set(data,'$.contextId','fixture-context') WHERE run_id=?1",[&old.id]).unwrap();
+    f.store
+        .execute(
+            "revoke-reconciliation",
+            &Command::PermissionsUpdate {
+                decision_id: None,
+                team_id: f.team.id.clone(),
+                revision: 2,
+                grant: BTreeMap::new(),
+                revoke: BTreeMap::from([(old.worker_id.clone(), vec![Permission::Communicate])]),
+            },
+        )
+        .unwrap();
+    assert!(f.store.member_reconcile(&current, &request).is_err());
+    assert_eq!(counts(), before);
 }

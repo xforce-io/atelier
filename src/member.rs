@@ -32,6 +32,13 @@ pub struct ToolOperation {
     pub input: Value,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ReconcileOperation {
+    pub delivery_id: String,
+    pub operation: ToolOperation,
+}
+
 #[derive(Deserialize)]
 #[serde(
     tag = "name",
@@ -252,6 +259,74 @@ pub(crate) fn bound_run(db: &Connection, binding: &MemberBinding) -> Result<(Run
 }
 
 impl Store {
+    /// Read-only transport recovery under the current member's authority. This
+    /// is not a model tool and never calls member_effect or creates a request.
+    pub fn member_reconcile(
+        &self,
+        binding: &MemberBinding,
+        request: &ReconcileOperation,
+    ) -> Result<Value> {
+        let tx = self.connection.unchecked_transaction()?;
+        let (mut run, task) = bound_run(&tx, binding)?;
+        let operation = &request.operation;
+        for id in [
+            &request.delivery_id,
+            &operation.operation_id,
+            &operation.originating_run_id,
+            &operation.tool_call_id,
+        ] {
+            text(id, "旧调用标识", 256)?;
+        }
+        let bytes = serde_json::to_vec(operation)?;
+        if bytes.len() > 256 * 1024 {
+            return Err(Error::Invalid("旧调用超过 256 KiB".into()));
+        }
+        let origin: Run = load(&tx, "runs", &operation.originating_run_id)?;
+        if origin.id == run.id
+            || origin.state != "stopped"
+            || origin.task_id != run.task_id
+            || origin.worker_id != run.worker_id
+            || origin.configuration_id != run.configuration_id
+            || origin.delivery_id != request.delivery_id
+        {
+            return Err(Error::Forbidden("旧调用不属于同成员已停止的执行".into()));
+        }
+        let context = |id: &str| -> Result<Option<String>> {
+            Ok(tx.query_row("SELECT json_extract(data,'$.contextId') FROM api_launches WHERE run_id=?1 UNION ALL SELECT json_extract(data,'$.contextId') FROM cli_resources WHERE run_id=?1",[id],|r|r.get(0)).optional()?.flatten())
+        };
+        let current_context = context(&run.id)?;
+        if current_context.is_none() || context(&origin.id)? != current_context {
+            return Err(Error::Forbidden("旧调用不属于当前原生执行上下文".into()));
+        }
+        let team: Team = load(&tx, "teams", &task.team_id)?;
+        run.permissions
+            .retain(|permission| require(&team, &run.worker_id, permission.clone()).is_ok());
+        let description = crate::member_tools::describe(&run, &task)?;
+        if !description["tools"]
+            .as_array()
+            .is_some_and(|tools| tools.iter().any(|tool| tool["name"] == operation.name))
+        {
+            return Err(Error::Forbidden("当前成员不再具有旧调用所需权限".into()));
+        }
+        let fingerprint = format!("{:x}", Sha256::digest(bytes));
+        let prior:Option<(String,String)>=tx.query_row("SELECT fingerprint,result FROM member_requests WHERE delivery_id=?1 AND operation_id=?2",
+            params![origin.delivery_id,operation.operation_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+        let result = if let Some((saved, result)) = prior {
+            if saved != fingerprint {
+                return Err(Error::Conflict("旧调用内容与已提交记录不符".into()));
+            }
+            serde_json::from_str(&result)?
+        } else {
+            let reused:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM member_requests WHERE originating_run_id=?1 AND tool_call_id=?2)",params![origin.id,operation.tool_call_id],|r|r.get(0))?;
+            if reused {
+                return Err(Error::Conflict("旧 toolCallId 与 operationId 不符".into()));
+            }
+            json!({"ok":false,"error":{"code":"not_executed","message":"原调用未提交；核对未执行任何新操作"}})
+        };
+        tx.commit()?;
+        Ok(result)
+    }
+
     pub fn member_description(&self, binding: &MemberBinding) -> Result<Value> {
         let tx = self.connection.unchecked_transaction()?;
         let (mut run, task) = bound_run(&tx, binding)?;
@@ -362,6 +437,11 @@ impl Store {
                 return Err(Error::Conflict("同 operationId 的工具请求内容不同".into()));
             }
             return Ok(serde_json::from_str(&result)?);
+        }
+        if origin.id != run.id {
+            return Err(Error::Conflict(
+                "旧 Run 的未提交调用不能补执行；先只读核对，再由当前 Run 决定新操作".into(),
+            ));
         }
         let used_call: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM member_requests WHERE originating_run_id=?1 AND tool_call_id=?2)",

@@ -59,3 +59,27 @@ test('migration refuses conflicting durable records and linked delivery director
     await assert.rejects(ToolLedger.openDelivery(root,'../other'),/delivery_invalid/);
   }finally{await rm(root,{recursive:true,force:true});}
 });
+
+test('foreign reconciliation retains pending facts until the next durable native turn consumes them',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'atelier-ledger-reconcile-'));
+  try {
+    const old=await ToolLedger.openDelivery(root,'old-delivery');let original:ToolOperation|undefined;
+    await assert.rejects(old.call('old-run','old-call','message_send',{body:'once'},async operation=>{original=operation;throw new Error('lost');}));
+    let queries=0;
+    const query=async(delivery:string,operation:ToolOperation)=>{queries++;assert.equal(delivery,'old-delivery');assert.deepEqual(operation,original);return {ok:true,data:{messageId:'original'}};};
+    const next=await ToolLedger.openDelivery(root,'new-delivery',query);
+    assert.equal(next.foreignRecovery.length,1);assert.equal(queries,1);
+    assert.deepEqual(next.foreignRecovery[0]?.result,{ok:true,data:{messageId:'original'}});
+    const file=join(root,'old-delivery',(await readdir(join(root,'old-delivery')))[0]!);
+    assert.equal(JSON.parse(await readFile(file,'utf8')).state,'pending');
+    // Simulate a crash before any new model starts, then before acknowledgement.
+    const retry=await ToolLedger.openDelivery(root,'new-delivery',query);
+    assert.deepEqual(retry.foreignRecovery,next.foreignRecovery);assert.equal(queries,2);
+    await assert.rejects(ToolLedger.openDelivery(root,'new-delivery',async()=>{throw new Error('revoked');}),/revoked/);
+    assert.equal(JSON.parse(await readFile(file,'utf8')).state,'pending');
+    await retry.confirmForeignRecovery();
+    assert.equal(JSON.parse(await readFile(file,'utf8')).state,'completed');
+    assert.equal((await ToolLedger.openDelivery(root,'later-delivery',query)).foreignRecovery.length,0);
+    assert.equal(queries,2);
+  }finally{await rm(root,{recursive:true,force:true});}
+});
