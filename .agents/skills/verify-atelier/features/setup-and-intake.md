@@ -1,6 +1,6 @@
 # S1 验证路径
 
-状态：基础 CLI 部分已实现，完整产品路径未验收。标准为 [L1 v0.10 第 8 节](../../../../docs/design/1-first-team-delivery/product.md#8-验收与效果验证) 的 S1.A1–A3、A7–A17；本文件只提供路径，不复制另一套验收标准。
+状态（2026-10-04）：真实 Pi 产品 Skill 已完成从空目录保存成员/未配齐团队、退出后补配置，以及缺失/损坏工作区、缺 CLI/旧协议停止的检查；真实三类连接和两种 CLI 续接另有证据。S1 仍未全量验收，剩余分支见[最新实现记录](../../../../docs/implementation/1-first-team-delivery.md)。以下保留此前检查点和验证方法，历史“尚未”不代表最新状态。标准为 [L1 v0.10 第 8 节](../../../../docs/design/1-first-team-delivery/product.md#8-验收与效果验证) 的 S1.A1–A3、A7–A17；本文件只提供路径，不复制另一套验收标准。
 
 S1.A16 的准备入口现为 `connection prepare <id> --revision <n> --worker <id> [--version <冻结版本>]`，带稳定 requestId；目前核对已显式准备的本地固定镜像并建立 Worker 私有存储。记录 preparing/prepared/failed 与固定错误类别，经 connection show/request show 复查，prepared 不等于登录或执行可用。镜像构建开发脚本不能替代完整产品准备路径；专用登录管理、检查和服务接线已有开发集成，真实账号/模型与续接尚未验收，S1.A16 不记 pass。分别验证两个 Worker 不共用目录、重复请求不重做、已准备目录丢失不补建、没有 Task/Run 副作用。
 

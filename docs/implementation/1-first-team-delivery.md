@@ -1,6 +1,10 @@
 # Issue #1 实现记录
 
-日期：2026-10-03。模式：end-to-end；当前阶段：implementation；状态：进行中，未完成交付、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结验收候选；以下按顺序保留各开发阶段的历史记录。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
+日期：2026-10-04。模式：end-to-end；当前阶段：implementation / verify；状态：进行中，未完成全量验收、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结最终验收候选。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
+
+当前依据为 L1 v0.10 / L2 v0.21，代码检查点 `966725d` 的 CI 已通过（151 项 Rust、58 项 TypeScript、格式与 Clippy；11 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有证据；首个游戏已明确验收关闭，其余交付的决定分别保持待办。当前逐项开发证据审计为 **16 项齐备、42 项仍待补分支或核对**，不把尚未审计的条目解释为全部未运行，也不据此宣布任一 Story 全量通过。详见本文末节。
+
+以下保留各阶段历史检查点，其中“未实现”“未验证”和测试数量均属于对应阶段；当前状态以最新日期记录为准。
 
 设计依据为 [L1 v0.10](../design/1-first-team-delivery/product.md) 与 [L2 v0.10](../design/1-first-team-delivery/technical.md)，均为 2026-10-01 修订。L1 复用此前逐轮讨论确认的产品范围；用户在 Issue 同步后回复“go”，本次据此进入开发。L2 补齐 pending 配置刷新、消息处理终局、跨 Run 操作去重的规则；未自行批准设计或减少验收。`keel-how` 按“无现成机制可讲”跳过。
 
@@ -636,3 +640,21 @@ Pi 执行 / Grok 检验任务 `54460c41…` 同样完成基线 `825e2e96…` 的
 服务 PATH 只提供 Node，不提供 Git/Docker；沿真实 API 让 DeepSeek 团队负责人判断三项报告请求。资料完整且角色齐全但执行器未配置时，任务 `d6e4d40e…` 仍正式承接、保持 active 并留下等待责任；主题/受众缺失的 `6fd9dbc9…` 正式 wait，保持 pending；要求跳过独立检验与人类决定的 `7861eefc…` 正式 decline，持久 closed/outcome=declined。最初 accept 测试误设为缺职责成员，核心正确拒绝；随后通过 pending 更新显式刷新角色与目标，保留原失败，不能将此错误前置冒充缺执行能力验收。证据 `report-intake-result-20261003.json`；后续缺配置通知有一次模型仅返回文字、未保存处理结果，投递 blocked，不声称整个消息处理链路通过。
 
 该实证暴露诊断偏差：blocked 投递和本人恢复待办只显示原生 completed，不能说明阻碍。修复到既有 L1 S5.A1 / L2 §4.3 契约：停止后缺有效处理结果时，投递与失败/恢复通知明确标注“未记录有效的消息处理结果”，Run 的原始停止原因保留；unknown 与有效处理结果路径不改为该原因。新增持久化回归核对 stopped/completed、blocked、恢复问题与未关闭任务分别成立。151 项 Rust、格式与 Clippy 通过；11 项环境测试仍默认 ignored。L1/L2 复用，未改变职责、调度或验收规则。
+
+
+## 2026-10-04：真实 Skill 渐进配置、异常诊断与逐项证据审计
+
+复用 L1 v0.10 / L2 v0.21，代码检查点 `966725d`。本轮没有修改产品代码，不重复已通过的模型游戏或全套测试；[当前 CI](https://github.com/xforce-io/atelier/actions/runs/37134652490) 提供同一代码版本的回归结果。
+
+实际 Pi 0.85.1 / openai-codex gpt-5.6-sol 读取已安装产品 Skill，第一宿主从中文含空格的新目录初始化，保存本人、三名数字员工及一个缺少执行/检验职责和连接的合法团队，然后退出。第二宿主重新查询事实，保留四个 Worker ID 和同一个 Team ID，依工作说明区分两名同名成员，再补职责、授权和公开 DeepSeek 连接配置。三名员工各自获得不同的执行配置 ID；修改执行成员说明不改变该 ID。取消后续凭据录入后，配置保留、连接仍为 unchecked；独立查询确认 Task、Run、消息、投递、连接检查均为零，服务未启动。两个宿主共 54 次实际工具调用，退出与进程消失均已核对。该专用配置工作区没有调用 DeepSeek，不与已有真实业务工作区的成功证据混同。
+
+另一实际 Pi 宿主分别诊断不存在工作区、损坏数据库、旧协议 CLI 和缺失 CLI：只读取一次 Skill 并调用四次 describe，不继续猜测旧命令或初始化；损坏数据库摘要不变，三个不存在的工作区仍不存在。旧协议 CLI 是明确标注的受控替身，其余 CLI 调用及宿主均真实。直接 CLI 另覆盖六类非法团队创建、非法更新后的原子性、同名不猜测、重复初始化和非空目录不覆盖；API/CLI 字段混填及秘密字段被拒。不支持的 runtime 在补齐镜像/出站策略前只命中缺配置检查，补齐后才明确返回 unavailable，两次结果均保留。
+
+本地证据：`setup-boundaries-cli-20261003.json`、`skill-readiness-boundaries-20261003.json`、`skill-progressive-setup-20261004.json`、`connection-boundaries-cli-20261004.json`，均位于 `.agents/verify-runs/1/`；原始宿主记录保留在忽略的测试目录，不提交私人会话。`current-state-20261004.json` 再次确认两个业务工作区均 stopped、activeRuns=0，首个任务仍 closed/accepted；没有替用户处理其余验收待办。
+
+`acceptance-audit-20261003.json` 已按 58 个稳定 ID 更新，保留每项标准与各原始证据对应的代码版本。16 项开发证据齐备为 S1.A1/A3/A7/A9/A12/A13/A14/A15/A17、S2.A4/A5、S3.A1/A5、S4.A1/A6、S5.A5。S3.A5 的两种真实原生续接与缺失历史的确定性 Integration 分开记录；S4.A1 仅指已经明确接受的首个任务。另 42 项分别写明缺失分支或待核对证据，不能以一个游戏通过替代。
+
+剩余工作包括真实成员拒收、无产出阻塞与部分真实 Skill 决定/恢复路径，权限/额度/崩溃等已有 Integration 的逐项归档，以及各当前交付的人类决定。真实人类拒绝后新版验收尚未完成；不得由宿主制造决定。失败 API 原生上下文的空 assistant 续接问题仍对应 [milkie #273](https://github.com/xforce-io/milkie/issues/273)，原失败记录保留，未通过重置历史规避。完整 58 项、独立审查与合入仍未完成。
+
+
+同日另以新的 Pi 宿主模拟返回旧任务：从原创建 request ID 找回任务 `7c77a16a…`，区分原请求的 pending/queued 快照与当前 revision 3 的待验收事实，核对当前产出、独立检验与本人待办。19 次实际工具调用中，两次只读参数使用错误均保留，宿主查 help 后纠正；未重发目标或安排，未替本人决定，前后 Task/服务/收件箱/决定查询结果完全相同。证据 `skill-return-to-task-20261004.json`。此次只读取 Run 汇总，未逐个查询 Run，S5.A8 因此仍 pending，不把局部成功扩大成整项通过。S4.A6 的真实新旧/partial 导出与无覆盖、S5.A5 的三类事务故障及重试原子性，则已核对原始文件摘要和当前 CI 对应断言，计入上述 16 项。
