@@ -1617,6 +1617,35 @@ fn revocation_and_runtime_stop_block_launch_and_restoring_grants_does_not_revive
 }
 
 #[test]
+fn completed_run_without_handling_reports_business_blocker_and_preserves_native_reason() {
+    let mut f = Fixture::new(true);
+    let (run, _) = f.running_member_with_contract(Some(generic_contract()));
+    let native_reason = "API 执行结束：completed（model_stop）；资源已回收";
+    f.store
+        .runtime_run_observed_stopped("service", &run.id, native_reason)
+        .unwrap();
+    drop(f.store);
+    f.store = Store::open(f.dir.path()).unwrap();
+    assert_eq!(
+        f.store.run(&run.id).unwrap().stop_reason.as_deref(),
+        Some(native_reason)
+    );
+    let mailbox = f.store.mailbox(Some(&run.worker_id)).unwrap();
+    let delivery = mailbox
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["id"] == run.delivery_id)
+        .unwrap();
+    assert_eq!(delivery["status"], "blocked");
+    assert!(delivery["handlingResult"].is_null());
+    let business_reason = format!("未记录有效的消息处理结果；{native_reason}");
+    assert_eq!(delivery["reason"], business_reason);
+    assert_eq!(recovery_for(&f, &run.task_id).question, business_reason);
+    assert_eq!(f.store.task(&run.task_id).unwrap().state, "pending");
+}
+
+#[test]
 fn run_failure_notifications_are_atomic_durable_and_deduplicated() {
     let mut f = Fixture::new(true);
     let config = f.prepare_digital_leader();

@@ -88,9 +88,11 @@ pub(crate) fn stopped(db: &Connection, run: &mut Run, reason: &str) -> Result<()
     // The saved handling result remains queryable even if cancellation or a
     // newer task revision invalidates it. Process exit never supplies one.
     let delivery_reason = if run.task_revision != task.revision && status == "cancelled" {
-        "投递的任务依据已过期"
+        "投递的任务依据已过期".to_owned()
+    } else if status == "blocked" {
+        format!("未记录有效的消息处理结果；{reason}")
     } else {
-        reason
+        reason.to_owned()
     };
     db.execute(
         "UPDATE deliveries SET status=?2,reason=?3,revision=revision+1 WHERE id=?1 AND run_id=?4",
@@ -103,12 +105,12 @@ pub(crate) fn stopped(db: &Connection, run: &mut Run, reason: &str) -> Result<()
         save_task(db, &task)?;
     }
     if status == "blocked" {
-        notify_failure(db, run, &mut task)?;
+        notify_failure(db, run, &mut task, &delivery_reason)?;
     }
     Ok(())
 }
 
-fn notify_failure(db: &Connection, run: &Run, task: &mut Task) -> Result<()> {
+fn notify_failure(db: &Connection, run: &Run, task: &mut Task, reason: &str) -> Result<()> {
     if task.state == "closed" || task.cancellation_requested {
         return Ok(());
     }
@@ -117,7 +119,7 @@ fn notify_failure(db: &Connection, run: &Run, task: &mut Task) -> Result<()> {
         task,
         &run.delivery_id,
         &format!("run:{}", run.id),
-        run.stop_reason.as_deref().unwrap_or("团队负责人运行受阻"),
+        reason,
     )? {
         return Ok(());
     }
@@ -145,7 +147,8 @@ fn notify_failure(db: &Connection, run: &Run, task: &mut Task) -> Result<()> {
         if exists {
             continue;
         }
-        let body = serde_json::json!({"runId":run.id,"deliveryId":run.delivery_id,"reason":run.stop_reason}).to_string();
+        let body = serde_json::json!({"runId":run.id,"deliveryId":run.delivery_id,"reason":reason})
+            .to_string();
         enqueue_system(
             db,
             task,
@@ -176,7 +179,7 @@ pub(crate) fn recover_on_start(db: &Connection, new_epoch: &str) -> Result<()> {
             save(db, &run)?;
             db.execute("UPDATE deliveries SET status='uncertain',reason='旧资源尚未核对',revision=revision+1 WHERE id=?1 AND run_id=?2",params![run.delivery_id,run.id])?;
             let mut task: Task = load(db, "tasks", &run.task_id)?;
-            notify_failure(db, &run, &mut task)?;
+            notify_failure(db, &run, &mut task, "旧服务退出，资源状态尚未核对")?;
         }
     }
     Ok(())
@@ -446,7 +449,7 @@ impl Store {
         save(&tx, &run)?;
         tx.execute("UPDATE deliveries SET status='uncertain',reason=?2,revision=revision+1 WHERE id=?1 AND run_id=?3",params![run.delivery_id,reason,run.id])?;
         let mut task: Task = load(&tx, "tasks", &run.task_id)?;
-        notify_failure(&tx, &run, &mut task)?;
+        notify_failure(&tx, &run, &mut task, reason)?;
         tx.commit()?;
         Ok(run)
     }

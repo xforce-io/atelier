@@ -620,3 +620,19 @@ L1 v0.10 不变，L2 v0.21 明确总输入 64 KiB、控制区 24 KiB、当前输
 证据 `pi-host-exit-game-result-20261003.json` 保存具名宿主/模型、Skill 摘要、全部宿主工具调用、进程退出、原生事件时间范围/摘要和完整任务/检验证据；`pi-host-exit-game-observations-20261003.jsonl` 保存独立观察。该证据补齐 S2.A5/S7.A1 的宿主退出后正常推进分支；尚无本任务试玩/正式接受，不代替失败返工和其他必需分支。
 
 同一候选补做真实 Skill 权限与导出边界：DeepSeek 与 Pi/Grok 两个任务中，本人有 arrange 授权但非冻结负责人，intake/execute/verify/rework 共 8 次均返回 forbidden，任务不变。本人担任负责人时，另建任务 `7202ea79…` 实际承接和排队成功；服务未启动即取消，投递 cancelled、Task closed/outcome=cancelled、Run 0。两次非空导出拒绝且文件摘要不变；失败任务 partial 产出 `561f048e…` 可按原摘要导出，保留 partial 且不改变任务或验收。证据 `skill-role-boundary-and-export-20261003.json`、`skill-human-leader-boundary-20261003.json`、`skill-partial-export-20261003.json`。仅补齐所述分支，不把未运行的合法检验/返工及活动取消分支写成通过。
+
+## 2026-10-03：两种原生 CLI 完成真实失败返工与独立重验
+
+软件候选 `c0329d4`，复用 L1 v0.10 / L2 v0.21。独立任务模拟接手遗留代码：在任务开始时明确要求先原样固定输入基线、直接交接独立检查，再依据真实失败报告返工。初始文件、检查配置与标准在任务开始前固定；宿主不修改候选、不提交检查结论、不代成员安排阶段。该前置要求与此前执行者交接前即自行修好的正常任务分开记录。
+
+Grok 执行 / Pi 检验任务 `e817a65c…`：基线 `6f19a268…` 的真实检查 15 通过、4 失败，准确覆盖 X/O 两条对角线漏判。Grok 负责人据检验 `96a2deb9…` 安排一次返工；Grok 在原执行 context `40edde30…` 以 resume=true 启动新 Run，修复并交接新产出 `caaba4ed…`。Pi 在独立 context `b13be32a…` 续接并重新检查，检验 `6abd74c8…` 为 19/19，通过后负责人提出人类请求 `5dd7eb7f…`。
+
+Pi 执行 / Grok 检验任务 `54460c41…` 同样完成基线 `825e2e96…` 的 15/19 与真实 4 项失败、负责人一次返工、新产出 `36bb1612…` 的独立 19/19，并提出人类请求 `583afe1f…`。核对首次执行与返工的 context 相同、后者 resume=true；检验使用另一个 context，两次独立检查也实际续接。两任务各 9 Run、一次返工，所有执行资源已停止；两个基线均与固定输入摘要一致，新旧版本可独立导出且摘要正确。服务已停止保留三个当前人类待办，没有将待验收记为接受。
+
+证据 `baseline-review-grok-result-20261003.json`、`baseline-review-pi-result-20261003.json` 及各自 observations 保存模型实际操作账本、负责人返工因果、全部 Run/会话关联、旧失败与新通过检查。补齐 S3.A1/S3.A5 的真实失败返工与原生续接分支；当前人类试玩/接受、会话丢失、拒收、额度与其他剩余分支仍分别核对，不汇总整项通过。
+
+## 2026-10-03：无 Git/Docker 的报告承接与消息未处理诊断
+
+服务 PATH 只提供 Node，不提供 Git/Docker；沿真实 API 让 DeepSeek 团队负责人判断三项报告请求。资料完整且角色齐全但执行器未配置时，任务 `d6e4d40e…` 仍正式承接、保持 active 并留下等待责任；主题/受众缺失的 `6fd9dbc9…` 正式 wait，保持 pending；要求跳过独立检验与人类决定的 `7861eefc…` 正式 decline，持久 closed/outcome=declined。最初 accept 测试误设为缺职责成员，核心正确拒绝；随后通过 pending 更新显式刷新角色与目标，保留原失败，不能将此错误前置冒充缺执行能力验收。证据 `report-intake-result-20261003.json`；后续缺配置通知有一次模型仅返回文字、未保存处理结果，投递 blocked，不声称整个消息处理链路通过。
+
+该实证暴露诊断偏差：blocked 投递和本人恢复待办只显示原生 completed，不能说明阻碍。修复到既有 L1 S5.A1 / L2 §4.3 契约：停止后缺有效处理结果时，投递与失败/恢复通知明确标注“未记录有效的消息处理结果”，Run 的原始停止原因保留；unknown 与有效处理结果路径不改为该原因。新增持久化回归核对 stopped/completed、blocked、恢复问题与未关闭任务分别成立。151 项 Rust、格式与 Clippy 通过；11 项环境测试仍默认 ignored。L1/L2 复用，未改变职责、调度或验收规则。
