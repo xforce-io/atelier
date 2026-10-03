@@ -9,6 +9,7 @@ mod candidate;
 pub mod channel;
 mod checker;
 pub mod cli_environment;
+mod cli_execution;
 pub mod cli_login;
 pub mod cli_resources;
 pub mod connection;

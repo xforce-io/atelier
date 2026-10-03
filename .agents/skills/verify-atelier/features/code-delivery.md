@@ -27,4 +27,4 @@ CLI `task execute` 与绑定 `task_arrange(action=execute)` 已支持持久安�
 
 `npm --prefix adapters/milkie run test:isolation` 运行真实 Docker 网络验证：普通 bridge 访问同一宿主 TCP 服务作为对照，隔离容器直连网关/其它宿主地址/公网/外部 DNS 均失败；只经精确目标代理取得 example.com 的实际 HTTPS 响应，未批准目标拒绝。核对内部网络 inhibit_ipv4、IPv6 关闭、非 root/只读根/无提权和代理实际停止，清理本测试标签资源。
 
-此检查使用冻结检查镜像中的 Node 作为测试运行时，不运行 Grok/Pi/Codex，不证明受控工具、专用登录或原生续接。milkie 固定版本 e049f0b 已有受控回调、专用存储与续接核对；Atelier 的真实 CLI 容器启动及登录接线仍待完成；S2.A6/A8 等完整 CLI 证明保持未验收，不能以网络检查替代。
+此检查使用冻结检查镜像中的 Node 作为测试运行时，不运行 Grok/Pi/Codex，不证明受控工具、专用登录或原生续接。milkie 固定版本 e049f0b 已有受控回调、专用存储与续接核对；Atelier 的 CLI 容器及登录管理已接线，原生账号与真实模型交付仍待验证；S2.A6/A8 等完整 CLI 证明保持未验收，不能以网络检查替代。

@@ -32,6 +32,12 @@ pub struct CliResources {
     pub context_id: Option<String>,
     #[serde(default)]
     pub resume: Option<bool>,
+    #[serde(default)]
+    pub login_generation: Option<u64>,
+    // Production launchers cannot create containers until the core sends the
+    // bootstrap after registering their process. None preserves old records.
+    #[serde(default)]
+    pub creation_authorized: Option<bool>,
     pub resources_stopped: bool,
     pub diagnostic: Option<String>,
 }
@@ -83,7 +89,7 @@ impl Store {
         id: &str,
         engine_id: &str,
     ) -> Result<CliResources> {
-        self.begin_cli_resources(epoch, id, engine_id, None)
+        self.begin_cli_resources(epoch, id, engine_id, None, None)
     }
 
     /// Production launch binds the native context in the same transaction as
@@ -95,7 +101,45 @@ impl Store {
         engine_id: &str,
         context: &crate::execution_context::ExecutionContext,
     ) -> Result<CliResources> {
-        self.begin_cli_resources(epoch, id, engine_id, Some(context))
+        self.begin_cli_resources(epoch, id, engine_id, Some(context), None)
+    }
+
+    pub fn runtime_begin_cli_execution(
+        &mut self,
+        epoch: &str,
+        id: &str,
+        engine: &str,
+        context: &crate::execution_context::ExecutionContext,
+        generation: u64,
+    ) -> Result<CliResources> {
+        self.begin_cli_resources(epoch, id, engine, Some(context), Some(generation))
+    }
+
+    pub fn runtime_authorize_cli_creation(
+        &mut self,
+        epoch: &str,
+        id: &str,
+    ) -> Result<CliResources> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        crate::runs::service(&tx, epoch, true)?;
+        let run: Run = load(&tx, "runs", id)?;
+        crate::runs::check_run_authority(&tx, &run)?;
+        let mut record =
+            read(&tx, id)?.ok_or_else(|| Error::Conflict("CLI 资源记录缺失".into()))?;
+        if run.epoch != epoch
+            || run.state != "running"
+            || run.pid.is_none()
+            || record.creation_authorized != Some(false)
+            || record.resources_stopped
+        {
+            return Err(Error::Conflict("CLI 创建许可缺少当前进程归属".into()));
+        }
+        record.creation_authorized = Some(true);
+        save(&tx, &record)?;
+        tx.commit()?;
+        Ok(record)
     }
 
     fn begin_cli_resources(
@@ -104,6 +148,7 @@ impl Store {
         id: &str,
         engine_id: &str,
         context: Option<&crate::execution_context::ExecutionContext>,
+        login_generation: Option<u64>,
     ) -> Result<CliResources> {
         validate_engine_id(engine_id)?;
         let tx = self
@@ -143,6 +188,20 @@ impl Store {
         if config.worker_id != run.worker_id {
             return Err(Error::Forbidden("CLI 执行配置不属于该成员".into()));
         }
+        if let Some(generation) = login_generation {
+            let environment: crate::cli_environment::CliEnvironment =
+                load(&tx, "cli_environments", &run.configuration_id)?;
+            if environment.worker_id != run.worker_id
+                || environment.connection_version != version.id
+                || environment.image != image
+                || environment.engine_id.as_deref() != Some(engine_id)
+                || environment.state != "prepared"
+                || !environment.login_material_ready
+                || environment.login_generation != generation
+            {
+                return Err(Error::Conflict("CLI 专用环境或登录代次已变化".into()));
+            }
+        }
         let native = context
             .map(|context| crate::execution_context::mark_used(&tx, &run, context))
             .transpose()?;
@@ -159,6 +218,8 @@ impl Store {
             egress_hosts: egress_hosts.unwrap_or_default(),
             context_id: native.map(|context| context.id),
             resume: context.map(|context| context.used),
+            login_generation,
+            creation_authorized: login_generation.map(|_| false),
             resources_stopped: false,
             diagnostic: None,
         };
@@ -384,54 +445,73 @@ pub(crate) async fn cleanup_named(
     }
     Ok(())
 }
-/// Only recover after the owning adapter process group is absent, otherwise it
-/// might still create resources after inspection. Missing PID remains unknown.
+/// The caller waits for its own child first. A registered but ungranted
+/// launcher has not received a bootstrap and therefore owns no containers.
+pub(crate) async fn stop_resources(client: &DatabaseClient, epoch: &str, run: &Run) -> Result<()> {
+    let id = run.id.clone();
+    let mut record = client
+        .call(move |store| store.cli_resources(&id))
+        .await?
+        .ok_or_else(|| Error::Conflict("CLI 资源记录缺失".into()))?;
+    if record.resources_stopped {
+        return Ok(());
+    }
+    let outcome = if record.creation_authorized == Some(false) {
+        Ok(())
+    } else if let Some(pid) = run.pid {
+        if crate::api_driver::group_absent(pid).await? {
+            cleanup(&record).await
+        } else {
+            Err(Error::Conflict("CLI 接入进程组仍在，尚不能核对容器".into()))
+        }
+    } else {
+        Err(Error::Conflict(
+            "CLI 接入缺少启动登记，尚不能核对容器".into(),
+        ))
+    };
+    record.resources_stopped = outcome.is_ok();
+    record.diagnostic = Some(match &outcome {
+        Ok(()) => "CLI 接入、执行容器、代理和网络已核对退出或从未获准创建".into(),
+        Err(e) => e.to_string(),
+    });
+    let owner = epoch.to_string();
+    client
+        .call(move |store| {
+            let tx = store
+                .connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            crate::runs::service(&tx, &owner, false)?;
+            let current: Run = load(&tx, "runs", &record.run_id)?;
+            let prior = read(&tx, &record.run_id)?
+                .ok_or_else(|| Error::Conflict("CLI 资源记录缺失".into()))?;
+            if current.state == "stopped"
+                || prior.ownership_token != record.ownership_token
+                || prior.creation_authorized != record.creation_authorized
+            {
+                return Err(Error::Conflict("CLI 资源核对依据已变化".into()));
+            }
+            save(&tx, &record)?;
+            tx.commit()?;
+            Ok(())
+        })
+        .await?;
+    outcome
+}
+
+/// Recovery never signals a historical PID or starts another model turn.
 pub(crate) async fn recover(client: &DatabaseClient, epoch: &str) -> Result<usize> {
-    let records = client.call(|store| {
-        let mut stmt = store.connection.prepare("SELECT r.data,c.data FROM runs r JOIN cli_resources c ON c.run_id=r.id WHERE r.state='unknown'")?;
-        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?,r.get::<_, String>(1)?)))?
+    let runs = client.call(|store| {
+        let mut stmt = store.connection.prepare("SELECT r.data FROM runs r JOIN cli_resources c ON c.run_id=r.id WHERE r.state='unknown'")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        rows.into_iter().map(|(run, record)| Ok((serde_json::from_str::<Run>(&run)?,serde_json::from_str::<CliResources>(&record)?))).collect::<Result<Vec<_>>>()
+        rows.into_iter().map(|run| serde_json::from_str::<Run>(&run).map_err(Into::into)).collect::<Result<Vec<_>>>()
     }).await?;
     let mut reconciled = 0;
-    for (run, mut record) in records {
-        let absent = match run.pid {
-            Some(pid) => crate::api_driver::group_absent(pid).await?,
-            None => false,
-        };
-        let outcome = if !absent {
-            Err(Error::Conflict(
-                "CLI 接入进程组仍在或缺少启动登记，尚不能核对容器".into(),
-            ))
-        } else {
-            cleanup(&record).await
-        };
-        record.resources_stopped = outcome.is_ok();
-        record.diagnostic = Some(match &outcome {
-            Ok(()) => "CLI 接入进程组、执行容器、代理和网络均已核对退出".into(),
-            Err(e) => e.to_string(),
-        });
-        let owner = epoch.to_string();
-        let saved = record.clone();
-        client
-            .call(move |store| {
-                let tx = store
-                    .connection
-                    .transaction_with_behavior(TransactionBehavior::Immediate)?;
-                crate::runs::service(&tx, &owner, false)?;
-                let current: Run = load(&tx, "runs", &saved.run_id)?;
-                let prior = read(&tx, &saved.run_id)?
-                    .ok_or_else(|| Error::Conflict("CLI 资源记录缺失".into()))?;
-                if current.state != "unknown" || prior.ownership_token != saved.ownership_token {
-                    return Err(Error::Conflict("CLI 资源核对依据已变化".into()));
-                }
-                save(&tx, &saved)?;
-                tx.commit()?;
-                Ok(())
-            })
-            .await?;
-        if outcome.is_err() {
-            continue;
+    for run in runs {
+        match stop_resources(client, epoch, &run).await {
+            Ok(()) => {}
+            Err(Error::Database(e)) => return Err(Error::Database(e)),
+            Err(_) => continue,
         }
         let result = if matches!(run.purpose.as_str(), "execute" | "rework") {
             client

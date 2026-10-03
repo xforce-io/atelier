@@ -53,6 +53,12 @@ pub struct Capabilities {
 }
 
 impl Capabilities {
+    pub fn cli(skill: &str) -> Self {
+        Self {
+            transport: "agent-cli".into(),
+            ..Self::api(skill)
+        }
+    }
     pub fn api(skill: &str) -> Self {
         Self {
             milkie_commit: MILKIE_COMMIT.into(),
@@ -201,7 +207,7 @@ impl<W: AsyncWrite + Unpin> Writer<W> {
     }
 }
 
-/// Drives one already-owned API adapter. It neither spawns a business stage nor
+/// Drives one already-owned adapter. It neither spawns a business stage nor
 /// marks a delivery handled. Caller must inspect resources after any return.
 pub async fn serve<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     input: R,
@@ -219,17 +225,32 @@ pub async fn serve<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
     // Compare caller-supplied pipe scope to the authoritative bound Run before
     // disclosing start data, even though the service is the trusted caller.
     let bound = binding.clone();
-    let actual = database
-        .call(move |store| store.member_scope(&bound))
+    let (actual, cli) = database
+        .call(move |store| {
+            let scope = store.member_scope(&bound)?;
+            let run = store.run(&scope.run_id)?;
+            let configuration = store.execution_configuration(&run.configuration_id)?;
+            let version = store.connection_version(&configuration.connection_version)?;
+            Ok((
+                scope,
+                matches!(
+                    version.specification,
+                    crate::connection::ConnectionSpec::AgentCli { .. }
+                ),
+            ))
+        })
         .await?;
+    let skill = start
+        .get("skill")
+        .and_then(Value::as_str)
+        .ok_or_else(protocol_error)?;
     if actual != scope
         || capabilities
-            != Capabilities::api(
-                start
-                    .get("skill")
-                    .and_then(Value::as_str)
-                    .ok_or_else(protocol_error)?,
-            )
+            != if cli {
+                Capabilities::cli(skill)
+            } else {
+                Capabilities::api(skill)
+            }
     {
         return Err(protocol_error());
     }

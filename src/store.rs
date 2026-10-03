@@ -213,7 +213,7 @@ impl Store {
             .query_row("SELECT id FROM workspace", [], |r| r.get(0))?;
         Ok(
             json!({"id": id,"self": self.worker(&self.self_id)?,"schemaVersion":23,
-            "capabilities":{"persistentCore":true,"runtimeLifecycle":true,"execution":true,"executionTransports":["api"]}}),
+            "capabilities":{"persistentCore":true,"runtimeLifecycle":true,"execution":true,"executionTransports":["api","agent-cli"]}}),
         )
     }
 
@@ -277,11 +277,8 @@ impl Store {
             self.credential_reference(&connection.current_version)?
                 .map(|c| c.generation)
         );
-        value["executionSupported"] = json!(matches!(
-            self.connection_version(&connection.current_version)?
-                .specification,
-            crate::connection::ConnectionSpec::Api { .. }
-        ));
+        // Dispatch availability is not provider readiness or product acceptance.
+        value["executionSupported"] = json!(true);
         value["connection"] = serde_json::to_value(connection)?;
         let mut stmt=tx.prepare("SELECT e.data FROM cli_environments e JOIN connection_versions v ON v.id=json_extract(e.data,'$.connectionVersion') WHERE json_extract(v.data,'$.connection_id')=?1 ORDER BY e.id")?;
         let rows = stmt
@@ -387,7 +384,7 @@ impl Store {
         value["queuedDeliveries"] = json!(queued);
         value["activeRuns"] = json!(crate::runs::active_count(&self.connection)?);
         value["executionSupported"] = json!(true);
-        value["executionTransports"] = json!(["api"]);
+        value["executionTransports"] = json!(["api", "agent-cli"]);
         value["executionReason"] =
             json!("API 按冻结连接及本地凭据启动；agent CLI 隔离执行尚未接入");
         Ok(value)

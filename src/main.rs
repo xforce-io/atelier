@@ -648,7 +648,7 @@ fn run(cli: Cli) -> Result<Value> {
     if matches!(cli.command, Top::Doctor) {
         return match Store::open(&cli.workspace) {
             Ok(store) => Ok(
-                json!({"workspace":store.workspace()?,"runtime":atelier::runtime::status(&cli.workspace)?,"execution":{"api":"supported_with_frozen_configuration_and_local_credential","agentCli":"not_implemented"},"skill":"host_install_describe_and_member_scoped_guidance"}),
+                json!({"workspace":store.workspace()?,"runtime":atelier::runtime::status(&cli.workspace)?,"execution":{"api":"supported_with_frozen_configuration_and_local_credential","agentCli":"integrated_native_model_verification_pending"},"skill":"host_install_describe_and_member_scoped_guidance"}),
             ),
             Err(Error::NotFound(_)) => Ok(
                 json!({"workspace":"missing","next":"workspace init","runtime":"workspace_required","execution":"workspace_required","skill":"host_install_describe_and_member_scoped_guidance"}),

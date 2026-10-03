@@ -52,7 +52,7 @@ test('real connection login uses dedicated TTY containers, persists material gen
       assert.equal(saved.code,'login_material_saved_unchecked');assert.equal(saved.resourcesStopped,true);assert.equal(saved.generation,1);
       assert.deepEqual((await cli(workspace,...args)).login,saved); // Replays without a TTY, never reopens native login.
       const shown=await cli(workspace,'connection','show',id);
-      assert.equal(shown.cliEnvironments[0].loginMaterialReady,true);assert.equal(shown.executionSupported,false);
+      assert.equal(shown.cliEnvironments[0].loginMaterialReady,true);assert.equal(shown.executionSupported,true);
       assert.equal(await docker('container','ls','--all','--filter',`label=atelier.login=${saved.id}`,'--format','{{.ID}}'),'');
       assert.equal(await docker('network','ls','--filter',`label=atelier.login=${saved.id}`,'--format','{{.ID}}'),'');
       const auth=join(workspace,'cli-environments',worker.execution_config,'login');

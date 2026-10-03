@@ -10396,3 +10396,90 @@ fn real_docker_cli_reconcile_preserves_foreign_resources_and_waits_for_adapter_e
         "liveAdapter":alive["data"],"wrongEngine":wrong_engine["data"],"foreignResource":foreign_result["data"],"attachedNetwork":attached["data"],"stopped":final_result["data"],"repeat":repeated["data"]})).unwrap()).unwrap();
     println!("evidence: {}", evidence.display());
 }
+
+#[test]
+fn cli_production_launch_binds_login_generation_and_ungranted_crash_releases_no_containers() {
+    let (mut f, run) = prepared_cli_fixture();
+    let context = f
+        .store
+        .runtime_context(
+            "service",
+            &run.task_id,
+            &run.worker_id,
+            &run.configuration_id,
+            &run.purpose,
+        )
+        .unwrap();
+    let config = f
+        .store
+        .execution_configuration(&run.configuration_id)
+        .unwrap();
+    let sql = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3")).unwrap();
+    let environment = json!({"id":run.configuration_id,"workerId":run.worker_id,"connectionVersion":config.connection_version,
+        "runtime":"pi","image":CLI_RESOURCE_IMAGE,"engineId":"fixture-engine","state":"prepared","code":"fixture",
+        "loginGeneration":4,"loginMaterialReady":true,"everPrepared":true,"preparationRequestId":"fixture"});
+    sql.execute(
+        "INSERT INTO cli_environments(id,data) VALUES(?1,?2)",
+        rusqlite::params![run.configuration_id, environment.to_string()],
+    )
+    .unwrap();
+    for (engine, generation) in [("fixture-engine", 3), ("other-engine", 4)] {
+        assert!(
+            f.store
+                .runtime_begin_cli_execution("service", &run.id, engine, &context, generation)
+                .is_err()
+        );
+        assert!(!f.store.run(&run.id).unwrap().launch_started);
+        assert!(
+            !f.store
+                .runtime_context(
+                    "service",
+                    &run.task_id,
+                    &run.worker_id,
+                    &run.configuration_id,
+                    &run.purpose
+                )
+                .unwrap()
+                .used
+        );
+    }
+    sql.execute_batch("CREATE TRIGGER reject_cli_permission BEFORE INSERT ON cli_resources BEGIN SELECT RAISE(ABORT,'fixture'); END;").unwrap();
+    assert!(
+        f.store
+            .runtime_begin_cli_execution("service", &run.id, "fixture-engine", &context, 4)
+            .is_err()
+    );
+    assert!(!f.store.run(&run.id).unwrap().launch_started);
+    sql.execute_batch("DROP TRIGGER reject_cli_permission")
+        .unwrap();
+    let resource = f
+        .store
+        .runtime_begin_cli_execution("service", &run.id, "fixture-engine", &context, 4)
+        .unwrap();
+    assert_eq!(resource.login_generation, Some(4));
+    assert_eq!(resource.creation_authorized, Some(false));
+    assert!(
+        f.store
+            .runtime_authorize_cli_creation("service", &run.id)
+            .is_err(),
+        "no registered child, no creation permit"
+    );
+    // No Docker exists at this point, so reconciliation must not require one.
+    let result = acceptance_cli(&f, "unused", &["runtime", "reconcile"]);
+    assert_eq!(result["data"]["state"], "stopped");
+    assert_eq!(result["data"]["reconciledCliResources"], 1);
+    assert!(
+        f.store
+            .cli_resources(&run.id)
+            .unwrap()
+            .unwrap()
+            .resources_stopped
+    );
+    assert_eq!(f.store.run(&run.id).unwrap().state, "stopped");
+    assert_eq!(f.store.task(&run.task_id).unwrap().runs_used, 1);
+    assert!(
+        f.store
+            .runtime_authorize_cli_creation("service", &run.id)
+            .is_err()
+    );
+}

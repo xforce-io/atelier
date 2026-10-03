@@ -245,7 +245,7 @@ fn command_environment(command: &mut tokio::process::Command) {
         }
     }
 }
-fn login_material(environment: &CliEnvironment, workspace: &Path) -> bool {
+pub(crate) fn login_material(environment: &CliEnvironment, workspace: &Path) -> bool {
     let path = environment.directory(workspace).join("login/auth.json");
     let Ok(info) = fs::symlink_metadata(path) else {
         return false;

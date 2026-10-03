@@ -127,7 +127,7 @@ fn real_cli_prepare_is_private_worker_bound_persistent_and_distinct_from_login()
     assert_ne!(separate["environment"]["id"], result["environment"]["id"]);
     let shown = success(&p, &["connection", "show", id]);
     assert_eq!(shown["cliEnvironments"].as_array().unwrap().len(), 2);
-    assert_eq!(shown["executionSupported"], false);
+    assert_eq!(shown["executionSupported"], true);
     assert_eq!(success(&p, &["task", "list"]), serde_json::json!([]));
     let sql = rusqlite::Connection::open(p.join("atelier.sqlite3")).unwrap();
     assert_eq!(
@@ -621,7 +621,10 @@ fn runtime_survives_start_client_and_blocks_unconfigured_agent_without_spending_
     let started = success(p, &["runtime", "start"]);
     assert_eq!(started["state"], "running");
     assert_eq!(started["executionSupported"], true);
-    assert_eq!(started["executionTransports"], serde_json::json!(["api"]));
+    assert_eq!(
+        started["executionTransports"],
+        serde_json::json!(["api", "agent-cli"])
+    );
     let status = success(p, &["runtime", "status"]);
     assert_eq!(status["epoch"], started["epoch"]);
     assert_eq!(status["lockHeld"], true);
@@ -849,10 +852,10 @@ fn profile_import_rejects_mutable_images_and_unknown_configuration() {
     profile["name"] = "changed".into();
     std::fs::write(&profile_path, serde_json::to_vec(&profile).unwrap()).unwrap();
     assert!(!invoke(&workspace, &args).status.success());
-    // Registering a fixed image does not enable the unimplemented agent CLI.
+    // Transport support describes installed dispatch, not this profile readiness.
     assert_eq!(
         success(&workspace, &["workspace", "show"])["capabilities"]["executionTransports"],
-        serde_json::json!(["api"])
+        serde_json::json!(["api", "agent-cli"])
     );
 }
 

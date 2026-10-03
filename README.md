@@ -32,7 +32,7 @@ API 凭据已支持 macOS Keychain：`connection credential set <连接 ID> --re
 
 产品 Atelier Skill 已提供最小宿主入口与按身份装配的成员指导。`skill install --destination <新 Skill 目录>` 安装宿主入口，相同内容重复调用不改写；已有不同内容或链接目标拒绝。宿主加载后调用 `skill describe --protocol 2`，可指定互斥的 `--team <ID>` / `--task <ID>`，由核心按本人、当前授权和冻结职责返回指导与操作索引。安装不创建工作区、不启动团队，不代表宿主已加载。成员工具说明从当前工具登记生成，执行/检验不会收到负责人完整操作路径。
 
-完整异步团队尚未完成：两种 agent CLI 的隔离接入及登录/检查、完整恢复真实验收、Skill 的完整真实团队路径和真实模型业务仍待完成。`doctor` 区分服务状态、API 支持、已有 Skill 入口与未实现的 agent CLI；支持 API 不等于当前配置可用或任务已验收。开发进度与验收状态见 [实现记录](docs/implementation/1-first-team-delivery.md)。
+完整异步团队尚未完成：两种 agent CLI 的原生认证、能力检查和模型执行验证、完整恢复真实验收、Skill 的完整真实团队路径和真实模型业务仍待完成。`doctor` 区分服务状态、API 支持、已有 Skill 入口与已接通但原生模型待验证的 agent CLI；支持 API 不等于当前配置可用或任务已验收。开发进度与验收状态见 [实现记录](docs/implementation/1-first-team-delivery.md)。
 
 ## 运行基础 CLI
 
@@ -86,7 +86,7 @@ cargo run --locked -- --workspace /tmp/atelier-demo worker list
 {"transport":"api","protocol":"openai-chat-completions","model":"模型标识","base_url":"https://example.invalid/v1"}
 ```
 
-agent CLI 配置改用 `{"transport":"agent-cli","runtime":"pi"}`；两类字段不能混用，配置文件不能含密钥。API 已有凭据管理和连接检查；agent CLI 已有 connection prepare/login 管理入口，要求固定镜像、明确出站域名及 Worker 专用环境。首次登录需要交互终端，不能带 --json；材料保存不等于账号或模型可用，真实 CLI 业务执行尚未接通。Worker 创建或更新时用 `--connection <ID>` 显式绑定当前连接版本；连接更新后原绑定保持不变。pending Task 通过 `task update --refresh-team` 显式刷新快照，已承接任务不受默认配置后续变化影响。
+agent CLI 配置改用 `{"transport":"agent-cli","runtime":"pi"}`；两类字段不能混用，配置文件不能含密钥。API 已有凭据管理和连接检查；agent CLI 已有 connection prepare/login 管理入口，要求固定镜像、明确出站域名及 Worker 专用环境。首次登录需要交互终端，不能带 --json；材料保存不等于账号或模型可用，CLI 执行已接运行服务，真实模型业务尚未验证。Worker 创建或更新时用 `--connection <ID>` 显式绑定当前连接版本；连接更新后原绑定保持不变。pending Task 通过 `task update --refresh-team` 显式刷新快照，已承接任务不受默认配置后续变化影响。
 
 `task decision request/list/show/respond/record` 提供补充资料或取舍的正式流程：request 指定问题、影响和处理者，重复 `--option` 提供可选项，省略选项则接受文本。respond 只保存答复并给发起者投递结果，不修改任务或授权。落实变更时在 `task update` 或 `team permissions update` 传 `--decision <ID>`；随后 record 使用 `--operation-actor <Worker ID> --operation-request <requestId>` 核对真实操作。无需变化用 `--no-change <原因>`，落实受阻用 `--blocked <原因>`；后者保留待处理状态。普通消息、通用邮箱处理及这些补充事项命令均不能代替人类验收。
 

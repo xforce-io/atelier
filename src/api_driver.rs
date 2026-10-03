@@ -1,4 +1,4 @@
-//! One owned API adapter process per accepted Run. Business transitions remain
+//! One owned adapter process per accepted Run. Business transitions remain
 //! member tool operations; an adapter terminal is only an execution observation.
 use crate::{
     Error, Result,
@@ -21,6 +21,7 @@ struct Prepared {
     entry: PathBuf,
     connection: Value,
     credential_generation: u64,
+    cli: Option<crate::cli_execution::Prepared>,
 }
 
 async fn prepare(
@@ -42,18 +43,6 @@ async fn prepare(
             Ok((version, reference))
         })
         .await?;
-    let ConnectionSpec::Api {
-        protocol,
-        model,
-        base_url,
-    } = version.specification
-    else {
-        return Err(Error::Unavailable("agent CLI 隔离执行尚未接入".into()));
-    };
-    let reference =
-        reference.ok_or_else(|| Error::Unavailable("冻结连接版本缺少本地 API 凭据".into()))?;
-    let credential_generation = reference.generation;
-    let entry = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("adapters/milkie/dist/src/main.js");
     let owner = epoch.to_string();
     let task = work.task.id.clone();
     let worker = work.worker_id.clone();
@@ -61,30 +50,72 @@ async fn prepare(
     let context = client
         .call(move |store| store.runtime_context(&owner, &task, &worker, &configuration, &purpose))
         .await?;
-    let directories = context.clone();
-    let workspace = path.to_path_buf();
-    let entry_check = entry.clone();
-    let secret = tokio::task::spawn_blocking(move || {
-        if !entry_check.is_file() {
-            return Err(Error::Unavailable(
-                "API 接入尚未构建，请先构建固定 milkie 接入".into(),
-            ));
+    let entry_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("adapters/milkie/dist/src");
+    match version.specification {
+        ConnectionSpec::Api {
+            protocol,
+            model,
+            base_url,
+        } => {
+            let reference = reference
+                .ok_or_else(|| Error::Unavailable("冻结连接版本缺少本地 API 凭据".into()))?;
+            let credential_generation = reference.generation;
+            let entry = entry_root.join("main.js");
+            let directories = context.clone();
+            let workspace = path.to_path_buf();
+            let entry_check = entry.clone();
+            let secret = tokio::task::spawn_blocking(move || {
+                if !entry_check.is_file() {
+                    return Err(Error::Unavailable(
+                        "API 接入尚未构建，请先构建固定 milkie 接入".into(),
+                    ));
+                }
+                directories.prepare_directories(&workspace)?;
+                crate::credential::load_secret(&reference)
+            })
+            .await
+            .map_err(|_| Error::Unavailable("API 执行准备线程退出".into()))??;
+            let mut connection = json!({"protocol":protocol,"model":model,"apiKey":secret});
+            if let Some(url) = base_url {
+                connection["baseUrl"] = json!(url);
+            }
+            Ok(Prepared {
+                context,
+                entry,
+                connection,
+                credential_generation,
+                cli: None,
+            })
         }
-        directories.prepare_directories(&workspace)?;
-        crate::credential::load_secret(&reference)
-    })
-    .await
-    .map_err(|_| Error::Unavailable("API 执行准备线程退出".into()))??;
-    let mut connection = json!({"protocol":protocol,"model":model,"apiKey":secret});
-    if let Some(base_url) = base_url {
-        connection["baseUrl"] = json!(base_url);
+        ConnectionSpec::AgentCli {
+            runtime,
+            model,
+            image: Some(_),
+            egress_hosts: Some(_),
+        } => {
+            let entry = entry_root.join("cli-container-main.js");
+            if !entry.is_file() {
+                return Err(Error::Unavailable("CLI 接入尚未构建".into()));
+            }
+            let cli =
+                crate::cli_execution::prepare(client, &context.configuration_id, &context, path)
+                    .await?;
+            let mut connection = json!({"runtime":runtime,"configDir":"/config"});
+            if let Some(model) = model {
+                connection["model"] = json!(model);
+            }
+            Ok(Prepared {
+                context,
+                entry,
+                connection,
+                credential_generation: 0,
+                cli: Some(cli),
+            })
+        }
+        _ => Err(Error::Unavailable(
+            "CLI 冻结连接缺少固定镜像或明确出站策略".into(),
+        )),
     }
-    Ok(Prepared {
-        context,
-        entry,
-        connection,
-        credential_generation,
-    })
 }
 
 /// Returns only after all accepted member calls have returned. The outer service
@@ -138,7 +169,7 @@ pub(crate) async fn dispatch(
         client
             .call(move |store| {
                 if store.run(&id)?.state != "stopped" {
-                    store.runtime_run_unknown(&owner, &id, "API 运行资源或提交效果尚未核对")?;
+                    store.runtime_run_unknown(&owner, &id, "运行资源或提交效果尚未核对")?;
                 }
                 Ok(())
             })
@@ -193,9 +224,22 @@ async fn execute(
     let owner = epoch.to_string();
     let id = run.id.clone();
     let context = preparation.context.clone();
+    let cli_launch = preparation
+        .cli
+        .as_ref()
+        .map(|c| (c.engine.clone(), c.environment.login_generation));
+    let generation = preparation.credential_generation;
     let launch = client
         .call(move |store| {
-            store.runtime_begin_api_launch(&owner, &id, &context, preparation.credential_generation)
+            if let Some((engine, generation)) = cli_launch {
+                store
+                    .runtime_begin_cli_execution(&owner, &id, &engine, &context, generation)
+                    .map(|_| ())
+            } else {
+                store
+                    .runtime_begin_api_launch(&owner, &id, &context, generation)
+                    .map(|_| ())
+            }
         })
         .await;
     if launch.is_err() {
@@ -224,6 +268,13 @@ async fn execute(
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    if preparation.cli.is_some() {
+        for key in ["HOME", "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG"] {
+            if let Some(value) = std::env::var_os(key) {
+                command.env(key, value);
+            }
+        }
+    }
     #[cfg(unix)]
     {
         command.process_group(0);
@@ -231,7 +282,10 @@ async fn execute(
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(_) => {
-            finish(client, epoch, run, "API 接入未能启动；已确认没有子进程").await?;
+            if preparation.cli.is_some() {
+                crate::cli_resources::stop_resources(client, epoch, run).await?;
+            }
+            finish(client, epoch, run, "接入未能启动；已确认没有子进程").await?;
             return Ok(());
         }
     };
@@ -251,7 +305,19 @@ async fn execute(
             Ok((binding, scope, description, task))
         }).await?;
         let skill = description["skill"].as_str().ok_or_else(|| Error::Invalid("成员 Skill 缺失".into()))?;
-        let (native, ledger) = preparation.context.directories(path);
+        let mut input=child.stdin.take().expect("piped stdin");
+        if let Some(cli)=preparation.cli.as_ref() {
+            let workspace=path.to_path_buf();let id=run.id.clone();let bundle=description.clone();
+            let skill_path=tokio::task::spawn_blocking(move||crate::cli_execution::write_skill(&workspace,&id,&bundle))
+                .await.map_err(|_|Error::Unavailable("CLI Skill 准备线程退出".into()))??;
+            let owner=epoch.to_string();let id=run.id.clone();
+            let resources=client.call(move|store|store.runtime_authorize_cli_creation(&owner,&id)).await?;
+            let mut bootstrap=serde_json::to_vec(&crate::cli_execution::bootstrap(cli,&resources,&preparation.context,path,&skill_path))?;
+            if bootstrap.len()>8191 {return Err(Error::Invalid("CLI 隔离启动配置超限".into()));}
+            bootstrap.push(b'\n');
+            tokio::io::AsyncWriteExt::write_all(&mut input,&bootstrap).await?;
+        }
+        let (native, ledger) = if preparation.cli.is_some(){(PathBuf::from("/state/native"),PathBuf::from("/state/ledger"))}else{preparation.context.directories(path)};
         let start = json!({"workerId":run.worker_id,"contextId":preparation.context.id,
             "configurationId":run.configuration_id,"purposeFamily":preparation.context.purpose_family,
             "contextDirectory":native,"ledgerDirectory":ledger,"resume":preparation.context.used,
@@ -271,8 +337,8 @@ async fn execute(
                 tokio::time::sleep(Duration::from_millis(250)).await;
             }
         });
-        let result = crate::channel::serve(child.stdout.take().expect("piped stdout"), child.stdin.take().expect("piped stdin"),
-            client.clone(), binding, ChannelConfiguration {scope, capabilities:Capabilities::api(skill), start}, stop).await;
+        let result = crate::channel::serve(child.stdout.take().expect("piped stdout"), input,
+            client.clone(), binding, ChannelConfiguration {scope, capabilities:if preparation.cli.is_some(){Capabilities::cli(skill)}else{Capabilities::api(skill)}, start}, stop).await;
         watcher.abort(); let _ = watcher.await;
         result
     }.await;
@@ -294,6 +360,22 @@ async fn execute(
         return Err(Error::Unavailable(
             "API 子进程组仍有资源，保留 unknown".into(),
         ));
+    }
+    if preparation.cli.is_some() {
+        let id = run.id.clone();
+        let current = client.call(move |store| store.run(&id)).await?;
+        crate::cli_resources::stop_resources(client, epoch, &current).await?;
+        return finish(
+            client,
+            epoch,
+            run,
+            if channel_result.is_ok() {
+                "CLI 接入已停止并回收，成员操作已排空"
+            } else {
+                "CLI 接入失败；资源已回收，成员操作已排空"
+            },
+        )
+        .await;
     }
     let owner = epoch.to_string();
     let id = run.id.clone();

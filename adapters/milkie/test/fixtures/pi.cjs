@@ -11,6 +11,13 @@ process.stdin.on('end', async () => {
   try {
     const prompt = JSON.parse(input);
     const request = JSON.parse(prompt.workMessage);
+    // The real-service integration supplies a bound mailbox message rather
+    // than a synthetic call array. This remains an explicitly fake model.
+    if(request.message && !request.calls) {
+      request.hold=request.message.body.includes('fixture-hold');
+      request.calls=[{name:'task_read',input:{}}];
+      if(!request.hold)request.calls.push({name:'message_respond',input:{kind:'wait',reason:'synthetic service integration',handler:request.humanWorkerId}});
+    }
     const file = arg('--session');
     const session = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8').split('\n')[0]) : { type: 'session', id: crypto.randomUUID(), cwd: process.cwd() };
     fs.appendFileSync(file, (fs.existsSync(file) ? '' : JSON.stringify(session) + '\n') + JSON.stringify({ prompt }) + '\n');

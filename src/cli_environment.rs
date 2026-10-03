@@ -481,7 +481,7 @@ mod tests {
             record.id
         );
         assert!(
-            !store.connection_view(id).unwrap()["executionSupported"]
+            store.connection_view(id).unwrap()["executionSupported"]
                 .as_bool()
                 .unwrap()
         );

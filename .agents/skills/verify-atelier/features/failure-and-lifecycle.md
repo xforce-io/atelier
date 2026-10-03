@@ -10,7 +10,7 @@
 
 已受理 execute/rework 原样 retry 必须拒绝；新返工消耗额度。数字员工团队负责人失效时本人收到唯一待办，修复后仍由原成员继续。
 
-Run 领取、单活动限制、重启 unknown、撤权不复活、取消等待停止、失败通知与状态原子提交已有核心测试。核心测试包含资源故障注入；另有真实 CLI/Keychain/Node 测试覆盖正常停服、强杀服务、旧进程组退出后恢复、失败不重派与不重复扣额度。真实 Docker 检查资源核对也有 Integration；正式恢复待办已有核心/CLI Integration，agent CLI 容器仍待实现，不能据此标记本 Story 通过。
+Run 领取、单活动限制、重启 unknown、撤权不复活、取消等待停止、失败通知与状态原子提交已有核心测试。核心测试包含资源故障注入；另有真实 CLI/Keychain/Node 测试覆盖正常停服、强杀服务、旧进程组退出后恢复、失败不重派与不重复扣额度。真实 Docker 检查资源核对也有 Integration；正式恢复待办已有核心/CLI Integration，agent CLI 容器已接运行服务并通过协议替身的停止回收集成，原生模型的完整恢复仍待验收，不能据此标记本 Story 通过。
 
 分别记录 Task、Delivery、Run、服务 epoch；已提交业务后终态丢失不得重复效果；无产出阻塞可在额度内继续。
 
@@ -44,3 +44,5 @@ Integration 已覆盖无产出阻塞后的真实 CLI 解决与有限返工、数
 `run show` 的 cliResources 展示登记的固定镜像、引擎身份、资源名称及核对状态；资源归属由核心在启动前保存。使用实际 `runtime reconcile` 验证：接入进程组存活/缺 PID、引擎不一致、同名异主容器或仍挂接其它容器的网络均保持 blocked_unknown，不误删、不释放 Run。原进程退出且全部归属资源移除后才 stopped；无业务终局的投递仍为 blocked，本人恢复待办保留，重复核对不消费额度。
 
 开发入口：`cargo test --locked --test core real_docker_cli_reconcile -- --ignored --nocapture`，要求准备固定 Node 镜像。该测试运行真实 CLI、OS 进程及 Docker 容器/网络，容器中是有界合成进程，未运行 Grok/Pi；不能替代两种 agent CLI 的停止/续接与 S5 完整验收。归属异常和错误引擎记录为 fixture，Docker 观察、清理及持久结果为真实组件。
+
+CLI 生产资源有创建许可：许可未授予的客户端中断可证明没有创建容器；许可授予后仍须核对进程组和归属资源。开发测试已覆盖登录代次变更拒绝、原子登记回滚及未授予许可时无需 Docker 的离线核对。旧记录缺许可字段继续保留原有缺 PID=unknown 规则。

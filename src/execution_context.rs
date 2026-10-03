@@ -141,7 +141,7 @@ pub(crate) fn mark_used(
     Ok(current)
 }
 
-fn private_directory(path: &Path, create: bool) -> Result<()> {
+pub(crate) fn private_directory(path: &Path, create: bool) -> Result<()> {
     if create {
         let mut builder = fs::DirBuilder::new();
         #[cfg(unix)]

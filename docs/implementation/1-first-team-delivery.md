@@ -443,3 +443,24 @@ L1: reuse v0.10，全部 58 项验收不变；L2: write v0.14，明确交互登�
 开发检查：原有 Rust 140 项通过，新增 2 项事务/中断重放测试通过；11 项环境测试默认 ignored。TypeScript 44 项通过；Clippy、格式及差异检查通过。真实 Docker 登录管理集成另通过 1 项，覆盖 Pi/Grok 两种参数路径、材料保存、非交互拒绝、请求重放、取消、代次失效及所属资源回收，证据 `.agents/verify-runs/1/cli-login-2ecf4eac-7795-4f0d-88ea-453dfdb09027.json`。登录程序为明确合成替身，nativeLogin=false/model=false；未读取用户真实凭据。共享容器启动器回归另通过 1 项，证据 `.agents/verify-runs/1/cli-container-7f9674ba-751e-4f61-afb3-929b65c2bdf0.json`。
 
 下一主路径：将专用登录材料与执行上下文绑定，接通运行服务的真实 CLI 投递、停止回收和能力检查；再验证真实 API/Pi/Grok、CLI/产品 Skill 团队路径，以及独立审查、CI、PR 与合入。上述局部测试不勾选完整 Story，不把已有材料当作真实认证通过。
+
+
+## 2026-10-03：运行服务接入隔离 CLI
+
+L1: reuse v0.10；L2: write v0.15。继续全部 58 项端到端目标，未冻结验收候选，未进行独立审查或创建 PR。
+
+运行服务现按 Run 冻结连接进入 API 或 CLI 准备，复用成员通道、当前权限检查、停止观察和在途调用排空。CLI 先取得专用环境锁、核对登录材料元数据/固定镜像/引擎及上下文，再领取投递；启动事务核对 Worker、连接版本与登录代次。锁持有至本 Run 回收结束，登录刷新直接保留于 Worker 专用目录，不复制宿主或其他成员凭据。不同 Task/用途的会话卷独立，同一上下文跨投递续接；Skill 文件由当前授权工具生成、按 Run 私有保存并只读挂载。
+
+生产资源初始保存 creationAuthorized=false；登记真实子进程后重查权限并提交创建许可，再发送私有容器参数。客户端在许可前中断可证明没有创建容器；旧记录没有该字段继续保守处理，缺 PID 仍未知。许可已发出时必须核对进程组及真实 Docker 所属容器/网络，未核对不释放 Run。新增测试覆盖错误登录代次/引擎拒绝、事务回滚、没有进程登记不能给许可，以及未给许可的中断无需 Docker 即可核对。
+
+服务联合测试发现并修复成员通道只接受 API 握手的遗留约束；现在从 Run 冻结配置确定握手类型，拒绝成员自选类型。executionTransports 现包括 api/agent-cli，表示调度代码已接线；doctor 明示 CLI 原生模型待验证，connection show 的 executionSupported 不代表环境、账号或模型就绪。
+
+开发回归：Rust 10 Unit + 19 CLI + 114 core = 143 项通过，11 项显式环境测试默认 ignored；TypeScript 44 项通过；Clippy、格式和差异检查通过。另显式运行：
+
+- 实际 CLI/PTY/运行服务/SQLite/Docker/milkie 集成通过：工具进入核心、同 Task 两投递续接、不同 Task 会话隔离、停服回收全部所属资源。证据 `.agents/verify-runs/1/cli-runtime-192fa75e-91ff-4cd0-a5ce-cd1e15594c7b.json`。
+- 专用登录成功/取消回收回归通过，证据 `.agents/verify-runs/1/cli-login-f87d6845-0b70-4f44-bc1b-aa6016625c70.json`。
+- 实际 Docker 恢复回归通过：活进程不能提前回收、引擎变更保留未知、异主同名资源不删除；证据 `.agents/verify-runs/1/cli-recovery-44410785-e2e5-4b72-95be-3a22743ca3bb.json`。
+
+以上模型和原生登录均为明确替身，不是 Story 通过证据。固定生产镜像中的真实 Pi --help / Grok login --help 在无网络、无宿主挂载下确认所用标志存在，未登录、未获取凭据、未调用模型。原生 Grok #270 心跳问题仍须实际复测，不能由上述 fixture 证明消失。
+
+剩余：CLI 专用能力检查；旧投递 pending 的可信核对；真实 API/Pi/Grok 的认证、模型工具行为与完整游戏协作；CLI/产品 Skill 两条入口全部 L1.8 验收；随后独立审查、CI、PR 和合入。完整团队目标保持未完成。
