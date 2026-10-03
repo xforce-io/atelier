@@ -86,12 +86,12 @@ function ready(child: ChildProcessWithoutNullStreams, signal: AbortSignal): Prom
 /** The Rust core has already committed these names/labels and registered this
  * launcher's PID before calling us. It owns cleanup and verifies immutable IDs;
  * this helper never deletes resources or treats pipe closure as proof of stop. */
-async function createProxy(o:ResourceOptions,id:string,kind:'run'|'login',uid:number,gid:number,signal:AbortSignal) {
+async function createProxy(o:ResourceOptions,id:string,kind:'run'|'login'|'probe',uid:number,gid:number,signal:AbortSignal) {
   if (await docker(['info','--format','{{.ID}}'],signal) !== o.engineId) throw new Error('cli_engine_changed');
   const image = JSON.parse(await docker(['image','inspect',o.image],signal))[0];
   if (image?.Config?.Labels?.['atelier.milkie'] !== milkieCommit || image?.Config?.Labels?.['atelier.adapter.protocol'] !== '2') throw new Error('cli_image_incompatible');
-  const executionName = kind==='run'?`atelier-cli-${id}`:`atelier-login-${id}`;
-  const prefix=kind==='run'?'atelier':'atelier-login';
+  const executionName = kind==='run'?`atelier-cli-${id}`:`atelier-${kind}-${id}`;
+  const prefix=kind==='run'?'atelier':`atelier-${kind}`;
   const proxyName=`${prefix}-proxy-${id}`,inner=`${prefix}-inner-${id}`,outer=`${prefix}-outer-${id}`;
   const labels = ['--label',`atelier.workspace=${o.workspaceId}`,'--label',`atelier.${kind}=${id}`,'--label',`atelier.owner=${o.ownershipToken}`];
   const common = ['--pull=never','--user',`${uid}:${gid}`,'--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--sysctl','net.ipv6.conf.all.disable_ipv6=1'];
@@ -118,7 +118,7 @@ async function createProxy(o:ResourceOptions,id:string,kind:'run'|'login',uid:nu
     return {proxy,address,executionName,inner,labels,common};
   } catch(error) {proxy.stdin.destroy();proxy.kill();throw error;}
 }
-export async function launchContainers(options: Isolation, signal: AbortSignal): Promise<Containers> {
+export async function launchContainers(options: Isolation, signal: AbortSignal, kind:'run'|'probe'='run'): Promise<Containers> {
   const o = parseIsolation(options);
   const directories = [o.nativeDirectory,o.ledgerDirectory,o.configDirectory,o.skillDirectory];
   const real = await Promise.all(directories.map(path=>fs.realpath(path)));
@@ -127,7 +127,7 @@ export async function launchContainers(options: Isolation, signal: AbortSignal):
   const metadata = await Promise.all(directories.map(path=>fs.lstat(path)));
   const uid = metadata[0]!.uid, gid = metadata[0]!.gid;
   if (uid === 0 || metadata.some(stat=>!stat.isDirectory()||stat.isSymbolicLink()||(stat.mode&0o077)!==0||stat.uid!==uid||stat.gid!==gid)) throw invalid();
-  const {proxy,address,executionName,inner,labels,common}=await createProxy(o,o.runId,'run',uid,gid,signal);
+  const {proxy,address,executionName,inner,labels,common}=await createProxy(o,o.runId,kind,uid,gid,signal);
   let execution: ChildProcessWithoutNullStreams | undefined;
   try {
     const mount = (source: string, target: string, readonly = false) => ['--mount',`type=bind,source=${source},target=${target}${readonly?',readonly':''}`];
@@ -135,7 +135,7 @@ export async function launchContainers(options: Isolation, signal: AbortSignal):
       '--tmpfs',`/tmp:rw,noexec,nosuid,size=67108864,uid=${uid},gid=${gid},mode=700`,
       ...mount(real[0]!,'/state/native'),...mount(real[1]!,'/state/ledger'),...mount(real[2]!,'/config'),...mount(real[3]!,'/skill',true),
       '--env',`HTTP_PROXY=http://${address}:3128`,'--env',`HTTPS_PROXY=http://${address}:3128`,'--env','NODE_USE_ENV_PROXY=1','--env','LOG_LEVEL=silent',
-      '--entrypoint','node',o.image,entry+'main.js'],signal);
+      '--entrypoint','node',o.image,entry+(kind==='probe'?'cli-probe-main.js':'main.js')],signal);
     const state = JSON.parse(await docker(['container','inspect',executionName],signal))[0];
     if (state?.HostConfig?.Privileged !== false || state?.HostConfig?.ReadonlyRootfs !== true
       || state?.Config?.User !== `${uid}:${gid}` || Object.keys(state?.NetworkSettings?.Networks??{}).join(',')!==inner) throw new Error('cli_container_incompatible');

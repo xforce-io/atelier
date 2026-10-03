@@ -163,6 +163,7 @@ impl Store {
         }
         crate::runs::check_run_authority(&tx, &run)?;
         let task: Task = load(&tx, "tasks", &run.task_id)?;
+        crate::connection_probe::ensure_idle(&tx, &run.worker_id)?;
         if task.revision != run.task_revision {
             return Err(Error::Conflict("CLI 启动的任务版本已变化".into()));
         }

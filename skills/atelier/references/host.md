@@ -7,3 +7,5 @@
 回应待办时读取事项 kind、处理者、依据版本和可选动作。补充答复与实际落实分开，恢复选择不授权或解除未知。正式接受/拒绝须对应用户当前明确决定；保存 request ID、请求/任务版本、产出及检验引用和脱敏 decision-ref。缺少决定保持待办，过期则重新展示当前事实，不自动把旧“同意”用于新版。
 
 导出使用指定 Artifact 到新目录或空目录，保留 partial 限制。导出不等于验收、合入或部署。遇到 unknown 先核对真实资源；不能修改数据库或假造停止结果以推进任务。
+
+CLI 连接检查须明确 `--worker`，在对应 `connection prepare` 和交互 `connection login` 后执行 `connection test`。查看 `connection show` 的 `workerReadiness`，不能把一个 Worker 的检查成功当成其他成员就绪。检查无业务 Task/Run；它会请求一次受控的原生模型诊断。旧请求仅重放或核对，修复后用新 requestId 重测。诊断中断时先按原请求或 `runtime reconcile` 核对所属资源，不导入宿主登录绕过专用环境。

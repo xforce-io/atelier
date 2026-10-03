@@ -30,7 +30,13 @@ pub(crate) async fn prepare(
         .map_err(|_| Error::Unavailable("CLI 环境锁线程退出".into()))??;
     let id = configuration.to_string();
     let environment = client
-        .call(move |store| store.cli_environment(&id))
+        .call(move |store| {
+            let environment = store.cli_environment(&id)?;
+            if let Some(environment) = &environment {
+                crate::connection_probe::ensure_idle(&store.connection, &environment.worker_id)?;
+            }
+            Ok(environment)
+        })
         .await?
         .ok_or_else(|| Error::Unavailable("先准备该 Worker 的专用 CLI 环境".into()))?;
     if environment.state != "prepared" || !environment.login_material_ready {

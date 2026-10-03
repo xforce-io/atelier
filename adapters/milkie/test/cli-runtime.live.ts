@@ -2,7 +2,8 @@
  * protocol fixtures; this is integration proof, never native-model acceptance. */
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {execFile} from 'node:child_process';
+import {execFile,spawn} from 'node:child_process';
+import {once} from 'node:events';
 import {promisify} from 'node:util';
 import {mkdir,mkdtemp,readFile,writeFile,cp,rm,readdir} from 'node:fs/promises';
 import {join,resolve} from 'node:path';
@@ -13,7 +14,7 @@ async function cli(workspace:string,...args:string[]){const value=JSON.parse((aw
 async function docker(...args:string[]){return (await exec('docker',args,{timeout:60000,maxBuffer:128*1024})).stdout.trim();}
 async function until<T>(read:()=>Promise<T>,ready:(v:T)=>boolean):Promise<T>{const deadline=Date.now()+30000;let value:T;do{value=await read();if(ready(value))return value;await new Promise(r=>setTimeout(r,150));}while(Date.now()<deadline);assert.fail(JSON.stringify(value));}
 
-test('service dispatches CLI mailbox tools, resumes per-task sessions, and stops owned containers',{timeout:180000},async()=>{
+test('service dispatches CLI mailbox tools, resumes per-task sessions, and stops owned containers',{timeout:300000},async()=>{
   await exec('cargo',['build','--locked'],{cwd:resolve('../..'),timeout:120000});
   const prepared=JSON.parse(await readFile(resolve('.cache/cli-image.json'),'utf8'));
   const root=await mkdtemp(resolve('.cache/cli-runtime-'));const workspace=join(root,'workspace');
@@ -31,8 +32,27 @@ test('service dispatches CLI mailbox tools, resumes per-task sessions, and stops
     const connection=(await cli(workspace,'--request-id','connection','connection','create','--name','Pi fixture','--file',spec)).connection;
     const worker=await cli(workspace,'--request-id','worker','worker','create','--name','团队负责人','--connection',connection.id);
     await cli(workspace,'--request-id','prepare','connection','prepare',connection.id,'--revision','1','--worker',worker.id);
+    const testArgs=['connection','test',connection.id,'--revision','1','--worker',worker.id];
+    const missing=await cli(workspace,'--request-id','test-before-login',...testArgs);assert.equal(missing.code,'cli_login_required');
     await exec('python3',[resolve('test/fixtures/terminal_driver.py'),binary,'--workspace',workspace,'--request-id','login','connection','login',connection.id,'--revision','1','--worker',worker.id],{timeout:30000});
     assert.equal((await cli(workspace,'request','show','login')).login.code,'login_material_saved_unchecked');
+    const checked=await cli(workspace,'--request-id','test',...testArgs);assert.equal(checked.code,'cli_tool_roundtrip',JSON.stringify(checked));assert.equal(checked.state,'passed');assert.equal(checked.resources.stopped,true);
+    assert.deepEqual(await cli(workspace,'--request-id','test',...testArgs),checked);
+    const readiness=(await cli(workspace,'connection','show',connection.id)).workerReadiness;assert.equal(readiness[0].workerId,worker.id);assert.equal(readiness[0].readiness,'ready');
+    assert.deepEqual(await readdir(join(workspace,'connection-probes')),[]);assert.deepEqual(await cli(workspace,'task','list'),[]);
+    assert.equal(JSON.stringify(checked).includes('fixture completed'),false);
+    // A killed checking client must not leave orphan containers or replay a
+    // model request when its original request ID is read/reconciled later.
+    const hold=join(workspace,'cli-environments',worker.execution_config,'login','fixture-probe-hold');await writeFile(hold,'explicit diagnostic cancellation fixture',{mode:0o600});
+    const probe=spawn(binary,['--workspace',workspace,'--json','--request-id','interrupted-test',...testArgs],{stdio:'ignore'});const probeClosed=once(probe,'close');
+    let interrupted:any;
+    try {
+      interrupted=await until(()=>cli(workspace,'request','show','interrupted-test').catch(()=>null),v=>v?.resources?.creationAuthorized===true);
+      await until(()=>readFile(join(workspace,'connection-probes',interrupted.id,'native','cwd','last-results.json'),'utf8').catch(()=>''),v=>v.length>0);
+    }finally{probe.kill('SIGKILL');await probeClosed;}
+    await until(async()=>{await cli(workspace,'runtime','reconcile');return cli(workspace,'request','show','interrupted-test');},v=>v.resources.stopped===true);
+    const reconciled=await cli(workspace,'--request-id','interrupted-test',...testArgs);assert.equal(reconciled.code,'probe_interrupted');assert.equal(reconciled.resources.stopped,true);
+    assert.deepEqual(await readdir(join(workspace,'connection-probes')),[]);await rm(hold);
     const team=await cli(workspace,'--request-id','team','team','create','--name','测试团队','--members',`${human},${worker.id}`,'--leader',worker.id);
     await cli(workspace,'--request-id','grants','team','permissions','update',team.id,'--revision','1','--grant',`${worker.id}:task.communicate`,'--grant',`${worker.id}:task.arrange`,'--grant',`${human}:task.communicate`);
     const first=await cli(workspace,'--request-id','task','task','create','--team',team.id,'--goal','真实服务协议测试');
@@ -75,7 +95,7 @@ test('service dispatches CLI mailbox tools, resumes per-task sessions, and stops
     assert.equal(await docker('network','ls','--filter',`label=atelier.workspace=${initialized.id}`,'--format','{{.ID}}'),'');
     const login=(await cli(workspace,'connection','show',connection.id)).cliEnvironments[0];assert.equal(login.loginGeneration,1);assert.equal(login.loginMaterialReady,true);
     const evidence=resolve(`../../.agents/verify-runs/1/cli-runtime-${randomUUID()}.json`);
-    await writeFile(evidence,JSON.stringify({kind:'development_integration',image,actualService:true,tools:true,contextReuse:true,foreignReconciliation:true,taskIsolation:true,stopCleanup:true,nativeCli:false,model:false},null,2));
+    await writeFile(evidence,JSON.stringify({kind:'development_integration',image,actualService:true,connectionProbe:true,probeCrashRecovery:true,tools:true,contextReuse:true,foreignReconciliation:true,taskIsolation:true,stopCleanup:true,nativeCli:false,model:false},null,2));
     console.log(`evidence: ${evidence}`);complete=true;
   } finally {
     if(service)await cli(workspace,'runtime','stop').catch(()=>{});

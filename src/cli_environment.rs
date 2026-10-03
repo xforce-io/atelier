@@ -173,6 +173,7 @@ impl Store {
             return Err(Error::Forbidden("成员未绑定该执行配置".into()));
         }
         let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM runs WHERE json_extract(data,'$.worker_id')=?1 AND state IN ('prepared','running','unknown')) OR EXISTS(SELECT 1 FROM cli_logins WHERE json_extract(data,'$.workerId')=?1 AND json_extract(data,'$.resourcesStopped')=0)",[worker],|r|r.get(0))?;
+        crate::connection_probe::ensure_idle(&tx, worker)?;
         if active {
             return Err(Error::Conflict(
                 "成员还有活动或未知 Run，须先停止并核对".into(),

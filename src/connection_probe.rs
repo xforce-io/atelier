@@ -17,6 +17,9 @@ use std::{
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+mod cli;
+pub(crate) use cli::{ensure_idle, recover};
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Record {
@@ -32,6 +35,10 @@ struct Record {
     http_status: Option<u16>,
     started_at_ms: u64,
     finished_at_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cli: Option<cli::Binding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resources: Option<cli::Resources>,
 }
 struct Preparation {
     record: Record,
@@ -64,9 +71,23 @@ impl Outcome {
                 "connection_failed"
                 | "credential_missing"
                 | "credential_unavailable"
-                | "adapter_unavailable",
+                | "adapter_unavailable"
+                | "cli_environment_unavailable"
+                | "cli_login_required"
+                | "cli_environment_changed"
+                | "cli_tool_unverified"
+                | "cli_native_failed",
             )
-            | ("inconclusive", "invalid_response" | "deadline" | "cancelled" | "adapter_failed")
+            | ("passed", "cli_tool_roundtrip")
+            | (
+                "inconclusive",
+                "invalid_response"
+                | "deadline"
+                | "cancelled"
+                | "adapter_failed"
+                | "resources_unresolved"
+                | "probe_interrupted",
+            )
             | ("unsupported", "agent_cli_unavailable") => self.http_status.is_none(),
             _ => false,
         };
@@ -148,16 +169,17 @@ impl Store {
                 if member.kind != WorkerKind::Agent {
                     return Err(Error::Invalid("CLI 检查须指定数字员工".into()));
                 }
-                let config: ExecutionConfiguration = load(
-                    &tx,
-                    "execution_configs",
-                    member
-                        .execution_config
-                        .as_deref()
-                        .ok_or_else(|| Error::Invalid("成员未绑定执行配置".into()))?,
-                )?;
+                let configuration =
+                    crate::content::digest(&serde_json::to_vec(&(worker, &selected.id))?);
+                let config: ExecutionConfiguration =
+                    load(&tx, "execution_configs", &configuration)?;
                 if config.connection_version != selected.id || config.worker_id != member.id {
                     return Err(Error::Conflict("成员专用环境与检查连接版本不符".into()));
+                }
+                cli::ensure_idle(&tx, worker)?;
+                let busy: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM runs WHERE json_extract(data,'$.worker_id')=?1 AND state IN ('prepared','running','unknown')) OR EXISTS(SELECT 1 FROM cli_logins WHERE json_extract(data,'$.workerId')=?1 AND json_extract(data,'$.resourcesStopped')=0)", [worker], |r|r.get(0))?;
+                if busy {
+                    return Err(Error::Conflict("先停止并核对该成员的执行或登录".into()));
                 }
             }
             _ => {}
@@ -184,6 +206,8 @@ impl Store {
             http_status: None,
             started_at_ms: now(),
             finished_at_ms: None,
+            cli: cli::binding(&tx, &selected, worker.as_deref())?,
+            resources: None,
         };
         save(&tx, "connection_tests", &record.id, &record)?;
         tx.execute(
@@ -238,6 +262,10 @@ impl Store {
 }
 
 pub(crate) fn readiness(db: &rusqlite::Connection, connection: &ModelConnection) -> Result<Value> {
+    let version: ConnectionVersion = load(db, "connection_versions", &connection.current_version)?;
+    if matches!(version.specification, ConnectionSpec::AgentCli { .. }) {
+        return cli::readiness(db, connection);
+    }
     let data: Option<String> = db.query_row("SELECT data FROM connection_tests WHERE json_extract(data,'$.connectionId')=?1 ORDER BY CASE WHEN json_extract(data,'$.connectionVersion')=?2 THEN 0 ELSE 1 END,rowid DESC LIMIT 1", params![connection.id, connection.current_version], |r|r.get(0)).optional()?;
     let Some(data) = data else {
         return Ok(json!({"readiness":"unchecked","lastTest":null}));
@@ -270,10 +298,46 @@ pub(crate) fn readiness(db: &rusqlite::Connection, connection: &ModelConnection)
 /// Explicit diagnostic only. Does not create business objects, alter model
 /// permissions, or silently turn a cached pending result into another request.
 pub async fn test(store: &mut Store, request_id: &str, command: &Command) -> Result<Value> {
+    // A completed receipt is a read, even while another CLI owns the lock.
+    // Unresolved resources still require the exclusive recovery path below.
+    text(request_id, "requestId", 128)?;
+    let cached: Option<(String,String)> = store.connection.query_row(
+        "SELECT fingerprint,result FROM requests WHERE actor=(SELECT self_id FROM workspace) AND id=?1",[request_id],|r|Ok((r.get(0)?,r.get(1)?))
+    ).optional()?;
+    if let Some((fingerprint, result)) = cached {
+        if fingerprint != crate::content::digest(&serde_json::to_vec(command)?) {
+            return Err(Error::Conflict("同 requestId 的内容不同".into()));
+        }
+        let record: Record = serde_json::from_str(&result)?;
+        if record.resources.as_ref().is_none_or(|r| r.stopped) {
+            return Ok(serde_json::to_value(record)?);
+        }
+    }
+    // The shared lock covers CLI login refresh, diagnostics, and execution.
+    // API diagnostics don't use a CLI environment.
+    let cli_request = if let Command::ConnectionTest { worker, .. } = command {
+        worker.is_some()
+    } else {
+        false
+    };
+    let _lock = if cli_request {
+        Some(crate::cli_environment::lock(&store.workspace_path)?)
+    } else {
+        None
+    };
     let (record, preparation) = store.prepare_connection_test(request_id, command)?;
     let Some(preparation) = preparation else {
+        if record.resources.as_ref().is_some_and(|r| !r.stopped) {
+            return cli::reconcile(store, record).await;
+        }
         return Ok(serde_json::to_value(record)?);
     };
+    if matches!(
+        preparation.version.specification,
+        ConnectionSpec::AgentCli { .. }
+    ) {
+        return cli::test(store, preparation).await;
+    }
     let id = preparation.record.id.clone();
     let outcome = observe(preparation).await;
     Ok(serde_json::to_value(

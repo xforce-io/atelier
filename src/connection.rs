@@ -203,9 +203,10 @@ pub(crate) fn apply(db: &Database, command: &Command) -> Result<Value> {
             let version: ConnectionVersion =
                 load(db, "connection_versions", &connection.current_version)?;
             let diagnostic = crate::connection_probe::readiness(db, &connection)?;
-            Ok(
-                json!({"connection":connection,"version":version,"readiness":diagnostic["readiness"],"lastTest":diagnostic["lastTest"]}),
-            )
+            let mut result = diagnostic;
+            result["connection"] = json!(connection);
+            result["version"] = json!(version);
+            Ok(result)
         }
         _ => Err(Error::Invalid("不是连接配置操作".into())),
     }

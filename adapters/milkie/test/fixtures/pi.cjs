@@ -10,7 +10,10 @@ process.stdin.on('data', chunk => input += chunk);
 process.stdin.on('end', async () => {
   try {
     const prompt = JSON.parse(input);
-    const request = JSON.parse(prompt.workMessage);
+    const request = prompt.connectionProbe ? {calls:[{name:'connection_probe',input:{challenge:prompt.connectionProbe.challenge}}]} : JSON.parse(prompt.workMessage);
+    if(prompt.connectionProbe && args.includes('fixture-no-tool')) request.calls=[];
+    if(prompt.connectionProbe && args.includes('fixture-wrong-challenge')) request.calls[0].input.challenge='wrong';
+    if(prompt.connectionProbe && fs.existsSync(process.env.PI_CODING_AGENT_DIR+'/fixture-probe-hold')) request.hold=true;
     // The real-service integration supplies a bound mailbox message rather
     // than a synthetic call array. This remains an explicitly fake model.
     if(request.message && !request.calls) {

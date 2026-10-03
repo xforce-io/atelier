@@ -162,6 +162,7 @@ pub async fn serve(path: &Path, epoch: String) -> Result<()> {
             interval.tick().await;
             crate::cli_resources::recover(&client, &epoch).await?;
             crate::cli_login::recover(&client, path).await?;
+            crate::connection_probe::recover(&client, path).await?;
             crate::api_driver::recover(&client, &epoch).await?;
             let current = epoch.clone();
             if client
@@ -224,6 +225,7 @@ pub async fn reconcile(path: &Path) -> Result<Value> {
         let checks = client.runtime_recover_checks(epoch.clone()).await?;
         let cli_resources = crate::cli_resources::recover(&client, &epoch).await?;
         let cli_logins = crate::cli_login::recover(&client, path).await?;
+        let cli_probes = crate::connection_probe::recover(&client, path).await?;
         crate::api_driver::recover(&client, &epoch).await?;
         client
             .call(move |store| {
@@ -231,7 +233,9 @@ pub async fn reconcile(path: &Path) -> Result<Value> {
                 let active = crate::runs::active_count(&store.connection)?;
                 let mut login_statement=store.connection.prepare("SELECT id FROM cli_logins WHERE json_extract(data,'$.resourcesStopped')=0 ORDER BY rowid")?;
                 let pending_logins=login_statement.query_map([],|r|r.get::<_,String>(0))?.collect::<std::result::Result<Vec<_>,_>>()?;
-                let resolved=active==0 && pending_logins.is_empty();
+                let mut probe_statement=store.connection.prepare("SELECT id FROM connection_tests WHERE json_extract(data,'$.resources.stopped')=0 ORDER BY rowid")?;
+                let pending_probes=probe_statement.query_map([],|r|r.get::<_,String>(0))?.collect::<std::result::Result<Vec<_>,_>>()?;
+                let resolved=active==0 && pending_logins.is_empty() && pending_probes.is_empty();
                 let state = if resolved {
                     "stopped"
                 } else {
@@ -253,6 +257,8 @@ pub async fn reconcile(path: &Path) -> Result<Value> {
                 result["reconciledCliResources"] = json!(cli_resources);
                 result["reconciledCliLogins"] = json!(cli_logins);
                 result["unresolvedLoginIds"] = json!(pending_logins);
+                result["reconciledCliProbes"] = json!(cli_probes);
+                result["unresolvedProbeIds"] = json!(pending_probes);
                 result["next"] = json!(if resolved {
                     "资源已核对；查询投递及恢复待办，按实际决定继续；未领取新工作"
                 } else {

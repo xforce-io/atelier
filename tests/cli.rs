@@ -1502,7 +1502,7 @@ fn connection_test_cli_saves_diagnostics_and_does_not_create_business_work() {
             cli_id,
         ],
     );
-    let unsupported = success(
+    let unavailable = success(
         &path,
         &[
             "--request-id",
@@ -1516,8 +1516,8 @@ fn connection_test_cli_saves_diagnostics_and_does_not_create_business_work() {
             worker["id"].as_str().unwrap(),
         ],
     );
-    assert_eq!(unsupported["state"], "unsupported");
-    assert_eq!(unsupported["code"], "agent_cli_unavailable");
+    assert_eq!(unavailable["state"], "failed");
+    assert_eq!(unavailable["code"], "cli_environment_unavailable");
     for object in ["task", "team"] {
         assert!(
             success(&path, &[object, "list"])
