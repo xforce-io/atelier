@@ -11,7 +11,7 @@ description: Verify Atelier L1.8 through both the real CLI and the product Ateli
 
 基础入口：`cargo build --locked` 后运行 `target/debug/atelier --help`，版本 0.1.0、JSON v2。使用专用空目录，通过 `--workspace <目录>` 选择范围；`workspace init --name <本人名称>` 初始化，写操作传 `--request-id`，更新传 `--revision`。运行 `cargo test --locked --test cli` 可检查跨进程基础路径，但不能把它当作真实宿主 Skill 验收。
 
-当前可驾驶 workspace、worker、team、task 的创建/更新/查询及人类承接、execute/verify/rework 安排及 blocker list/show/resolve、acceptance request/show、recovery apply、accept/reject 和 artifact export，mailbox list/respond/retry、message send、request show、runtime start/status/stop/reconcile、sample prepare、doctor。服务已有单实例生命周期和 API 投递执行，真实 CLI/Node 启停与崩溃资源核对使用合成凭据验证。API connection test 已有持久诊断及真实失败/重放检查；agent CLI 隔离登录/检查与完整交付尚未提供，完整 Drive 仍为 BLOCKED；不运行尚不存在的命令。井字棋缺陷样例可通过 sample prepare 准备；独立检查器校准说明见 trusted-checks/tic-tac-toe/README.md。真实成员产出、具名宿主/模型及完整 Skill 路径仍须补齐证据。产品入口为 skill install/describe，源包在 skills/atelier；临时目标安装并让实际宿主读取，再以 describe 返回的身份和权限操作，不能从文件存在推定已通过。
+当前可驾驶 workspace、worker、team、task 的创建/更新/查询及人类承接、execute/verify/rework 安排及 blocker list/show/resolve、acceptance request/show、recovery apply、accept/reject 和 artifact export，mailbox list/respond/retry、message send、request show、runtime start/status/stop/reconcile、sample prepare、doctor。服务已有单实例生命周期和 API 投递执行，真实 CLI/Node 启停与崩溃资源核对使用合成凭据验证。API connection test 已有持久诊断及真实失败/重放检查；agent CLI 已提供 prepare/login 管理入口，原生账号认证、能力检查与完整交付尚未验证或完成，完整 Drive 仍为 BLOCKED；不运行尚不存在的命令。井字棋缺陷样例可通过 sample prepare 准备；独立检查器校准说明见 trusted-checks/tic-tac-toe/README.md。真实成员产出、具名宿主/模型及完整 Skill 路径仍须补齐证据。产品入口为 skill install/describe，源包在 skills/atelier；临时目标安装并让实际宿主读取，再以 describe 返回的身份和权限操作，不能从文件存在推定已通过。
 
 ## Doctor
 

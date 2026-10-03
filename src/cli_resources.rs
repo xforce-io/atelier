@@ -294,7 +294,13 @@ async fn lookup(kind: Kind, name: &str) -> Result<Option<String>> {
     }
     Ok(found)
 }
-fn owned(value: &Value, kind: Kind, name: &str, id: &str, record: &CliResources) -> bool {
+fn owned(
+    value: &Value,
+    kind: Kind,
+    name: &str,
+    id: &str,
+    expected_labels: &BTreeMap<String, String>,
+) -> bool {
     let labels = match kind {
         Kind::Container => &value["Config"]["Labels"],
         Kind::Network => &value["Labels"],
@@ -305,12 +311,11 @@ fn owned(value: &Value, kind: Kind, name: &str, id: &str, record: &CliResources)
     };
     value["Id"] == id
         && value["Name"] == expected_name
-        && record
-            .labels()
+        && expected_labels
             .iter()
             .all(|(key, expected)| labels[key] == *expected)
 }
-async fn remove_owned(kind: Kind, name: &str, record: &CliResources) -> Result<()> {
+async fn remove_owned(kind: Kind, name: &str, labels: &BTreeMap<String, String>) -> Result<()> {
     let Some(id) = lookup(kind, name).await? else {
         return Ok(());
     };
@@ -320,7 +325,7 @@ async fn remove_owned(kind: Kind, name: &str, record: &CliResources) -> Result<(
         .filter(|v| v.len() == 1)
         .and_then(|v| v.first())
         .ok_or_else(|| Error::Unavailable("Docker 资源检查结果无效".into()))?;
-    if !owned(object, kind, name, &id, record) {
+    if !owned(object, kind, name, &id, labels) {
         return Err(Error::Conflict("同名 Docker 资源归属不符，未删除".into()));
     }
     if matches!(kind, Kind::Network)
@@ -344,19 +349,38 @@ async fn remove_owned(kind: Kind, name: &str, record: &CliResources) -> Result<(
     Ok(())
 }
 async fn cleanup(record: &CliResources) -> Result<()> {
-    if engine_identity().await? != record.engine_id {
+    cleanup_named(
+        &record.engine_id,
+        &record.labels(),
+        [
+            &record.execution_container,
+            &record.proxy_container,
+            &record.internal_network,
+            &record.egress_network,
+        ],
+    )
+    .await
+}
+/// Shared by business Run and explicit native-login resource owners. Names
+/// and labels come only from their durable core records, never CLI arguments.
+pub(crate) async fn cleanup_named(
+    engine: &str,
+    labels: &BTreeMap<String, String>,
+    names: [&str; 4],
+) -> Result<()> {
+    if engine_identity().await? != engine {
         return Err(Error::Conflict(
             "Docker 引擎已变化，不能用另一引擎的空列表证明旧资源停止".into(),
         ));
     }
     // Stop execution before egress. Never remove a shared login/session volume.
     for (kind, name) in [
-        (Kind::Container, &record.execution_container),
-        (Kind::Container, &record.proxy_container),
-        (Kind::Network, &record.internal_network),
-        (Kind::Network, &record.egress_network),
+        (Kind::Container, names[0]),
+        (Kind::Container, names[1]),
+        (Kind::Network, names[2]),
+        (Kind::Network, names[3]),
     ] {
-        remove_owned(kind, name, record).await?;
+        remove_owned(kind, name, labels).await?;
     }
     Ok(())
 }

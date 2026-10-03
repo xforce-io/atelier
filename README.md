@@ -86,7 +86,7 @@ cargo run --locked -- --workspace /tmp/atelier-demo worker list
 {"transport":"api","protocol":"openai-chat-completions","model":"模型标识","base_url":"https://example.invalid/v1"}
 ```
 
-agent CLI 配置改用 `{"transport":"agent-cli","runtime":"pi"}`；两类字段不能混用，配置文件不能含密钥。当前只保存配置，凭据设置、登录和连接可用性检查仍未提供。Worker 创建或更新时用 `--connection <ID>` 显式绑定当前连接版本；连接更新后原绑定保持不变。pending Task 通过 `task update --refresh-team` 显式刷新快照，已承接任务不受默认配置后续变化影响。
+agent CLI 配置改用 `{"transport":"agent-cli","runtime":"pi"}`；两类字段不能混用，配置文件不能含密钥。API 已有凭据管理和连接检查；agent CLI 已有 connection prepare/login 管理入口，要求固定镜像、明确出站域名及 Worker 专用环境。首次登录需要交互终端，不能带 --json；材料保存不等于账号或模型可用，真实 CLI 业务执行尚未接通。Worker 创建或更新时用 `--connection <ID>` 显式绑定当前连接版本；连接更新后原绑定保持不变。pending Task 通过 `task update --refresh-team` 显式刷新快照，已承接任务不受默认配置后续变化影响。
 
 `task decision request/list/show/respond/record` 提供补充资料或取舍的正式流程：request 指定问题、影响和处理者，重复 `--option` 提供可选项，省略选项则接受文本。respond 只保存答复并给发起者投递结果，不修改任务或授权。落实变更时在 `task update` 或 `team permissions update` 传 `--decision <ID>`；随后 record 使用 `--operation-actor <Worker ID> --operation-request <requestId>` 核对真实操作。无需变化用 `--no-change <原因>`，落实受阻用 `--blocked <原因>`；后者保留待处理状态。普通消息、通用邮箱处理及这些补充事项命令均不能代替人类验收。
 

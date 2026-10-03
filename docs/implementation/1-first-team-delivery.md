@@ -429,3 +429,17 @@ L1: reuse v0.10；L2: write v0.13，补充既定 prepare/login 路径中的准�
 开发检查：Rust 8 Unit + 19 CLI + 113 core = 140 项常规测试通过，11 项显式环境测试默认 ignored；Clippy、格式与差异检查通过。另显式执行 1 个真实 CLI/Docker 镜像准备场景通过，覆盖两个成员独立目录、命令与 request show 重放、目录缺失拒绝及无业务工作副作用，证据 `.agents/verify-runs/1/cli-prepare-223d6651-dcb0-4cf1-865a-cf25b851be25.json`。该场景不启动原生 CLI、不登录、不调用模型；TypeScript 未修改，43 项为上一轮证据，本轮未重复运行。
 
 下一主路径是专用登录（含用户交互、持久资源归属和中断核对）、按上下文使用专用登录材料、运行服务真实 CLI 调度/停止回收及能力检查。随后仍须 API/Pi/Grok、CLI/产品 Skill 的全部真实团队路径、独立审查、CI、PR 与合入。本轮没有创建 PR、冻结候选或勾选 Story 验收。
+
+## 2026-10-03：专用 CLI 登录管理入口
+
+L1: reuse v0.10，全部 58 项验收不变；L2: write v0.14，明确交互登录、登录代次和中断核对契约。仍处 implementation，完整团队未验收。
+
+新增 `connection login`：新请求要求真实交互终端和已准备的 Worker/冻结连接环境；原子保存独立登录操作并使旧材料就绪标记失效。核心先登记资源创建许可及进程归属，私有 Node 进程创建限定挂载/网络的登录容器，再由前台 Docker 连接用户终端。模型不接收登录输入，持久请求不含终端正文，不创建 Task/Run。结束后核对并回收所属资源；成功只观察私有材料文件存在，记录 login_material_saved_unchecked，不声明账号或模型可用。
+
+原 requestId 仅返回原结果或核对中断，不重新登录；失败重新尝试需要新 ID。运行服务与离线 reconcile 均处理未停止登录，仍持环境锁的活跃客户端不被接管。schema 23 增加 cli_logins，旧开发 schema 明确拒绝，不覆盖用户目录。
+
+真实终端测试暴露并修复了生命周期缺陷：Tokio Child::wait 自动关闭保存于 Child 的 stdin，原实现观察创建进程结束时提前关闭控制管道；现在单独持有管道，附着结束后才关闭。macOS 测试用 Python 标准库创建 PTY，避免 Node socket 输入无法供 script 使用；产品入口仍直接继承用户终端。
+
+开发检查：原有 Rust 140 项通过，新增 2 项事务/中断重放测试通过；11 项环境测试默认 ignored。TypeScript 44 项通过；Clippy、格式及差异检查通过。真实 Docker 登录管理集成另通过 1 项，覆盖 Pi/Grok 两种参数路径、材料保存、非交互拒绝、请求重放、取消、代次失效及所属资源回收，证据 `.agents/verify-runs/1/cli-login-2ecf4eac-7795-4f0d-88ea-453dfdb09027.json`。登录程序为明确合成替身，nativeLogin=false/model=false；未读取用户真实凭据。共享容器启动器回归另通过 1 项，证据 `.agents/verify-runs/1/cli-container-7f9674ba-751e-4f61-afb3-929b65c2bdf0.json`。
+
+下一主路径：将专用登录材料与执行上下文绑定，接通运行服务的真实 CLI 投递、停止回收和能力检查；再验证真实 API/Pi/Grok、CLI/产品 Skill 团队路径，以及独立审查、CI、PR 与合入。上述局部测试不勾选完整 Story，不把已有材料当作真实认证通过。

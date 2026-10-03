@@ -136,6 +136,15 @@ enum ProfileCommand {
 
 #[derive(Subcommand)]
 enum ConnectionCommand {
+    Login {
+        id: String,
+        #[arg(long)]
+        revision: u64,
+        #[arg(long)]
+        version: Option<String>,
+        #[arg(long)]
+        worker: String,
+    },
     Prepare {
         id: String,
         #[arg(long)]
@@ -769,6 +778,34 @@ fn run(cli: Cli) -> Result<Value> {
         Top::Worker(WorkerCommand::Show { id }) => return Ok(json!(store.worker(&id)?)),
         Top::Run(RunCommand::Show { id }) => return store.run_view(&id),
         Top::Connection(ConnectionCommand::List) => return store.list("connection"),
+        Top::Connection(ConnectionCommand::Login {
+            id,
+            revision,
+            version,
+            worker,
+        }) => {
+            use std::io::IsTerminal;
+            let interactive =
+                !cli.json && std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+            let request = cli
+                .request_id
+                .as_deref()
+                .ok_or_else(|| Error::Invalid("登录必须提供 --request-id".into()))?;
+            return tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?
+                .block_on(atelier::cli_login::login(
+                    &mut store,
+                    request,
+                    &Command::ConnectionLogin {
+                        id,
+                        revision,
+                        version,
+                        worker,
+                    },
+                    interactive,
+                ));
+        }
         Top::Connection(ConnectionCommand::Prepare {
             id,
             revision,

@@ -1,4 +1,4 @@
-PRAGMA user_version = 22;
+PRAGMA user_version = 23;
 CREATE TABLE workspace (id TEXT PRIMARY KEY, self_id TEXT NOT NULL);
 CREATE TABLE workers (id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data)));
 CREATE TABLE teams (id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data)));
@@ -78,6 +78,7 @@ CREATE TABLE execution_contexts (id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(j
 CREATE TABLE api_launches (run_id TEXT PRIMARY KEY REFERENCES runs(id), data TEXT NOT NULL CHECK(json_valid(data)));
 CREATE TABLE cli_resources (run_id TEXT PRIMARY KEY REFERENCES runs(id), data TEXT NOT NULL CHECK(json_valid(data)));
 CREATE TABLE cli_environments (id TEXT PRIMARY KEY REFERENCES execution_configs(id), data TEXT NOT NULL CHECK(json_valid(data)));
+CREATE TABLE cli_logins (id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data)));
 
 CREATE TABLE runs (
     id TEXT PRIMARY KEY,

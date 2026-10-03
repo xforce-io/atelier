@@ -271,6 +271,12 @@ pub enum Command {
         version: Option<String>,
         worker: String,
     },
+    ConnectionLogin {
+        id: String,
+        revision: u64,
+        version: Option<String>,
+        worker: String,
+    },
     TaskVerify {
         verification_id: Option<String>,
         blocker_id: Option<String>,

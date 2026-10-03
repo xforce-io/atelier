@@ -6,6 +6,8 @@ S1.A16 的准备入口现为 `connection prepare <id> --revision <n> --worker <i
 
 ## 真实入口
 
+`connection login` 已提供管理入口，参数与 prepare 对应；首次新 requestId 需要交互终端且不带 `--json`。已有请求可非交互重放或核对，不能重新认证；connection show 返回 cliLogins 与登录代次。开发集成已用实际 CLI、PTY、Docker 和两种登录替身验证成功材料保存、取消回收、代次失效和没有业务工作副作用；尚无原生账号认证或模型成功证明。完整 S1.A16 仍未通过。
+
 初始化、配置本人及三名数字员工、指定人或数字员工团队负责人、授权、隔离 CLI 准备/登录和运行服务启动。
 
 ## 驾驶与证据

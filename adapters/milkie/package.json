@@ -9,7 +9,8 @@
     "start": "node dist/src/main.js",
     "test": "npm run build && node --test dist/test/*.test.js",
     "test:isolation": "npm run build && node --test dist/test/isolation.live.js",
-    "test:cli-container": "npm run build && node --test dist/test/cli-container.live.js"
+    "test:cli-container": "npm run build && node --test dist/test/cli-container.live.js",
+    "test:cli-login": "npm run build && node --test dist/test/cli-login.live.js"
   },
   "dependencies": {
     "@freemanxu/milkie": "file:vendor/milkie-e049f0b12479b07456e9c10acd709579ca3cd47f.tgz",

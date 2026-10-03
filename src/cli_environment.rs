@@ -28,12 +28,26 @@ pub struct CliEnvironment {
     pub state: String,
     pub code: String,
     pub login_generation: u64,
+    #[serde(default)]
+    pub login_material_ready: bool,
     ever_prepared: bool,
     preparation_request_id: String,
 }
 impl CliEnvironment {
     pub fn directory(&self, workspace: &Path) -> PathBuf {
         workspace.join("cli-environments").join(&self.id)
+    }
+    pub(crate) fn validate_storage(&self, workspace: &Path) -> Result<()> {
+        if !self.ever_prepared {
+            return Err(Error::Unavailable("CLI 环境尚未准备".into()));
+        }
+        prepare_storage(
+            workspace,
+            self,
+            self.engine_id
+                .as_deref()
+                .ok_or_else(|| Error::Unavailable("CLI 环境缺少引擎归属".into()))?,
+        )
     }
 }
 
@@ -158,7 +172,7 @@ impl Store {
         if bound.worker_id != *worker || bound.connection_version != selected.id {
             return Err(Error::Forbidden("成员未绑定该执行配置".into()));
         }
-        let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM runs WHERE json_extract(data,'$.worker_id')=?1 AND state IN ('prepared','running','unknown'))",[worker],|r|r.get(0))?;
+        let active:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM runs WHERE json_extract(data,'$.worker_id')=?1 AND state IN ('prepared','running','unknown')) OR EXISTS(SELECT 1 FROM cli_logins WHERE json_extract(data,'$.workerId')=?1 AND json_extract(data,'$.resourcesStopped')=0)",[worker],|r|r.get(0))?;
         if active {
             return Err(Error::Conflict(
                 "成员还有活动或未知 Run，须先停止并核对".into(),
@@ -188,6 +202,7 @@ impl Store {
                 state: "preparing".into(),
                 code: "preparation_pending".into(),
                 login_generation: 0,
+                login_material_ready: false,
                 ever_prepared: false,
                 preparation_request_id: request.into(),
             }
@@ -226,7 +241,12 @@ impl Store {
         match outcome {
             Ok(engine) => {
                 current.state = "prepared".into();
-                current.code = "prepared_not_authenticated".into();
+                current.code = if current.login_material_ready {
+                    "environment_prepared_authentication_unchecked"
+                } else {
+                    "prepared_not_authenticated"
+                }
+                .into();
                 current.engine_id = Some(engine);
                 current.ever_prepared = true;
             }

@@ -328,7 +328,7 @@ async fn process_table() -> Result<String> {
     }
     String::from_utf8(output.stdout).map_err(|_| Error::Unavailable("进程资源输出无效".into()))
 }
-async fn process_identity(pid: u32) -> Result<String> {
+pub(crate) async fn process_identity(pid: u32) -> Result<String> {
     let table = process_table().await?;
     let line = table
         .lines()
