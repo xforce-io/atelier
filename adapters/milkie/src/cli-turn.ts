@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { ExecutionClient, ToolSchema, ToolHandler } from '@freemanxu/milkie';
-import { CliTools } from './cli-tools.js';
+import { CliTools, coreToolName, cliToolNames } from './cli-tools.js';
 import { ToolLedger, type ForwardTool, type ReconcileTool, type RecoveredOperation } from './tool-ledger.js';
 import type { Scope, Terminal } from './channel.js';
 
@@ -98,7 +98,7 @@ export async function executeCliTurn(turn: CliTurn): Promise<Terminal> {
     const previous = execution.query(call.runId);
     if (!previous?.stopped || previous.status === 'starting' || previous.status === 'running') throw failed('cli_previous_run_not_stopped');
     {
-      const operation = await turn.ledger.reconcileRecordedFor(launch.deliveryId,launch.runId, call.callId, call.name, call.input,reconcile);
+      const operation = await turn.ledger.reconcileRecordedFor(launch.deliveryId,launch.runId, call.callId, coreToolName(call.name), call.input,reconcile);
       // No host journal means no core request was issued. Never dispatch that
       // previously queued request for the first time during recovery.
       const output = JSON.stringify(operation ? { status: 'reconciled', ...operation } : { status: 'not_executed', reason: 'host_stopped_before_dispatch' });
@@ -113,7 +113,9 @@ export async function executeCliTurn(turn: CliTurn): Promise<Terminal> {
   }
   const recovered = new Map<string, RecoveredOperation>();
   for (const operation of [...transportRecovery, ...recoveries.flatMap(item => item.operation ? [item.operation] : [])]) recovered.set(operation.operationId, operation);
-  const prompt = JSON.stringify({ goal: turn.goal, skill: turn.skill, workMessage: turn.input, reconciledOperations: [...recovered.values()], reconciledCalls: recoveries.map(({callId, output}) => ({callId, output})) });
+  const prompt = JSON.stringify({ goal: turn.goal, skill: turn.skill,
+    cliToolNames, cliToolGuidance: 'Skill 与记录使用核心操作名；调用 CLI 工具时按 cliToolNames 替换对应名称，其余名称不变。仅当前提供的工具获准使用。',
+    workMessage: turn.input, reconciledOperations: [...recovered.values()], reconciledCalls: recoveries.map(({callId, output}) => ({callId, output})) });
   ensureActive();
   let runId: string | undefined;
   let uncertain = false;
@@ -130,7 +132,7 @@ export async function executeCliTurn(turn: CliTurn): Promise<Terminal> {
       if (call.runId !== runId || call.contextId !== nativeContextId) { uncertain = true; stop(); await cancel; throw failed('cli_call_binding_mismatch'); }
       const validity = tools.validate(call.name, call.input);
       if (validity !== 'allowed') return { ok: false, code: validity, message: validity === 'rejected' ? 'Tool is not authorized.' : 'Input does not match the full tool schema.' };
-      try { return result(await turn.ledger.call(scope.runId, call.callId, call.name, call.input, forward)); }
+      try { return result(await turn.ledger.call(scope.runId, call.callId, coreToolName(call.name), call.input, forward)); }
       catch {
         uncertain = true;
         stop();

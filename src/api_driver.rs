@@ -363,20 +363,27 @@ async fn execute(
         ));
     }
     if preparation.cli.is_some() {
+        let terminal = channel_result.ok();
+        let reason = match terminal.as_ref() {
+            Some(t) => format!(
+                "CLI 执行结束：{}（{}）；资源已回收，成员操作已排空",
+                t.stop_reason,
+                t.stop_code.as_deref().unwrap_or(&t.native_stop_reason)
+            ),
+            None => "CLI 通道失败；资源已回收，成员操作已排空".into(),
+        };
+        let owner = epoch.to_string();
+        let id = run.id.clone();
+        client.call(move |store| {
+            crate::runs::service(&store.connection, &owner, false)?;
+            store.connection.execute("UPDATE cli_resources SET data=json_set(data,'$.terminal',json(?2)) WHERE run_id=?1",
+                rusqlite::params![id, serde_json::to_string(&terminal)?])?;
+            Ok(())
+        }).await?;
         let id = run.id.clone();
         let current = client.call(move |store| store.run(&id)).await?;
         crate::cli_resources::stop_resources(client, epoch, &current).await?;
-        return finish(
-            client,
-            epoch,
-            run,
-            if channel_result.is_ok() {
-                "CLI 接入已停止并回收，成员操作已排空"
-            } else {
-                "CLI 接入失败；资源已回收，成员操作已排空"
-            },
-        )
-        .await;
+        return finish(client, epoch, run, &reason).await;
     }
     let owner = epoch.to_string();
     let id = run.id.clone();

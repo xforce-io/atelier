@@ -59,6 +59,10 @@ test('service dispatches CLI mailbox tools, resumes per-task sessions, and stops
     await cli(workspace,'runtime','start');service=true;
     const receipts=await until(()=>cli(workspace,'mailbox','list','--worker',worker.id),v=>v.some((r:{status:string})=>r.status==='handled'));
     assert.equal(receipts.length,1);assert.equal((await cli(workspace,'task','show',first.task.id)).runs_used,1);
+    const observed = await cli(workspace,'run','show',receipts[0].runId);
+    assert.equal(observed.cliResources.terminal.stopReason,'completed');
+    assert.equal(observed.cliResources.resourcesStopped,true);
+    assert.match(observed.stop_reason,/completed/);
     const contexts=await readdir(join(workspace,'contexts'));assert.equal(contexts.length,1);
     const native=join(workspace,'contexts',contexts[0]!,'native');
     const results=JSON.parse(await readFile(join(native,'cwd','last-results.json'),'utf8'));

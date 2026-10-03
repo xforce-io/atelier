@@ -53,3 +53,13 @@ test('unsupported or ambiguous schema fails preparation instead of dropping cons
   }
   assert.throws(() => new CliTools([tool, tool]), /definition_invalid/);
 });
+
+test('reserved read tool has one CLI alias without granting its native name or allowing collisions', () => {
+  const read = {...tool, name: 'read_file'};
+  const registry = new CliTools([read]);
+  assert.equal(registry.specs[0]!.name, 'atelier_read_file');
+  assert.equal(registry.validate('read_file', {kind:'blocked',reason:'x'}), 'rejected');
+  assert.equal(registry.validate('atelier_read_file', {kind:'blocked',reason:'x'}), 'allowed');
+  assert.throws(() => new CliTools([read, {...read, name:'atelier_read_file'}]), /definition_invalid/);
+  assert.throws(() => new CliTools([{...read, name:'atelier_read_file'}, read]), /definition_invalid/);
+});

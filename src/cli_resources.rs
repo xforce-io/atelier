@@ -40,6 +40,8 @@ pub struct CliResources {
     // bootstrap after registering their process. None preserves old records.
     #[serde(default)]
     pub creation_authorized: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal: Option<crate::channel::Terminal>,
     pub resources_stopped: bool,
     pub diagnostic: Option<String>,
 }
@@ -225,6 +227,7 @@ impl Store {
             resume: context.map(|context| context.used),
             login_generation,
             creation_authorized: login_generation.map(|_| false),
+            terminal: None,
             resources_stopped: false,
             diagnostic: None,
         };

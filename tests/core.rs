@@ -9792,6 +9792,55 @@ fn member_skill_bundle_contains_exact_installed_operations_and_only_relevant_gui
 
 const CLI_RESOURCE_IMAGE: &str =
     "sha256:7a87e3fe2909d0135d9041760b2808e70b9d2afb368e450e01d96b614665d133";
+
+#[test]
+fn actual_core_role_catalogues_start_in_real_cli_sdk() {
+    use std::{
+        io::Write,
+        process::{Command, Stdio},
+    };
+    let mut coordinator = Fixture::new(true);
+    let (_, binding) = coordinator.running_member_with_contract(Some(generic_contract()));
+    let lead = coordinator.store.member_description(&binding).unwrap();
+    let mut executor = Fixture::new(false);
+    let (run, _) = executor.prepare_code_execution(CLI_RESOURCE_IMAGE);
+    executor
+        .store
+        .runtime_begin_launch("service", &run.id)
+        .unwrap();
+    executor
+        .store
+        .runtime_child_started("service", &run.id, 321, "fixture-code-catalogue")
+        .unwrap();
+    let binding = executor.store.bind_member("service", &run.id).unwrap();
+    let execute = executor.store.member_description(&binding).unwrap();
+    let mut verifier = Fixture::new(false);
+    let (_, binding) = verifier.code_artifact_for_check("<h1>fixture</h1>", CLI_RESOURCE_IMAGE);
+    let verify = verifier.store.member_description(&binding).unwrap();
+    let mut child = Command::new("node")
+        .arg("test/fixtures/core-catalog.mjs")
+        .current_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("adapters/milkie"))
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&serde_json::to_vec(&json!([lead, execute, verify])).unwrap())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 fn prepared_cli_fixture() -> (Fixture, Run) {
     prepared_cli_fixture_with_policy(Some(vec!["example.com".into()]))
 }

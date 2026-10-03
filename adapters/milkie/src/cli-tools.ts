@@ -2,6 +2,12 @@ import { Ajv, type ValidateFunction } from 'ajv';
 import type { HostToolSchema, HostToolSpec, ToolSchema } from '@freemanxu/milkie';
 
 type Schema = Record<string, unknown>;
+// CLI-native read_file is reserved by milkie. Core names remain the identity
+// in the private channel and operation ledger, including after revocation.
+export function coreToolName(cliName: string): string {
+  return cliName === 'atelier_read_file' ? 'read_file' : cliName;
+}
+export const cliToolNames = { read_file: 'atelier_read_file' } as const;
 function object(value: unknown): Schema {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('cli_tool_schema_invalid');
   return value as Schema;
@@ -46,12 +52,13 @@ export class CliTools {
     // loading. Invalid input is rejected; neither schema nor arguments change.
     const ajv = new Ajv({ strict: true, allErrors: false });
     this.specs = tools.map(tool => {
-      if (!/^[a-z][a-z0-9_]{0,40}$/.test(tool.name) || this.validators.has(tool.name)
+      const name = tool.name === 'read_file' ? cliToolNames.read_file : tool.name;
+      if (!/^[a-z][a-z0-9_]{0,40}$/.test(tool.name) || tool.name === cliToolNames.read_file || this.validators.has(name)
         || !tool.description.trim() || tool.description.length > 4000) throw new Error('cli_tool_definition_invalid');
       const schema = typedSchema(tool.inputSchema);
       if (schema.type !== 'object' || schema.additionalProperties !== false) throw new Error('cli_tool_schema_invalid');
-      this.validators.set(tool.name, ajv.compile(schema));
-      return { name: tool.name, description: tool.description, inputSchema: schema as unknown as HostToolSchema };
+      this.validators.set(name, ajv.compile(schema));
+      return { name, description: tool.description, inputSchema: schema as unknown as HostToolSchema };
     });
   }
   validate(name: string, input: unknown): 'allowed' | 'invalid_input' | 'rejected' {

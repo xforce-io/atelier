@@ -30,6 +30,39 @@ async function fixture() {
 }
 const call = { name: 'message_send', input: { kind: 'work.note', body: '收到' } };
 
+test('real SDK maps read_file to a non-native tool and reconciles canonical calls after revocation', async () => {
+  const f = await fixture();
+  try {
+    f.options.tools.push({name:'read_file',description:'读取候选文件',inputSchema:{type:'object',properties:{path:{type:'string',minLength:1}},required:['path'],additionalProperties:false}});
+    const read = {name:'atelier_read_file',input:{path:'index.html'}};
+    f.options.input = JSON.stringify({calls:[{...read,name:'read_file'}, {...read,input:{path:''}}, read]});
+    assert.equal((await executeCliTurn(f.options)).stopReason,'completed');
+    assert.equal(f.operations.length,1);
+    assert.equal(f.operations[0]!.name,'read_file');
+    const responses = JSON.parse(await readFile(join(f.root,'cwd','last-results.json'),'utf8'));
+    assert.equal(responses[0].code,'rejected');
+    assert.equal(responses[1].code,'invalid_input');
+    assert.equal(responses[2].ok,true);
+    const prompt = JSON.parse(await readFile(join(f.root,'cwd','last-prompt.json'),'utf8'));
+    assert.equal(prompt.cliToolNames.read_file,'atelier_read_file');
+    let revoked = false;
+    f.options.forward = async operation => {
+      assert.equal(operation.name,'read_file');
+      if (!revoked && operation.originatingRunId === 'run-two') throw new Error('lost read reply');
+      return revoked ? {ok:false,error:'forbidden'} : {ok:true,content:'old-authorized-data'};
+    };
+    await assert.rejects(executeCliTurn({...f.options,scope:{...f.options.scope,runId:'run-two'},input:JSON.stringify({calls:[read]})}),/tool_result_uncertain/);
+    revoked = true;
+    const terminal = await executeCliTurn({...f.options,scope:{...f.options.scope,runId:'run-three'},tools:[f.options.tools[0]!],input:JSON.stringify({calls:[read]})});
+    assert.equal(terminal.stopReason,'completed');
+    const after = JSON.parse(await readFile(join(f.root,'cwd','last-prompt.json'),'utf8'));
+    assert.ok(after.reconciledOperations.every((op:{result:{error:string}})=>op.result.error==='forbidden'));
+    assert.equal(JSON.stringify(after).includes('old-authorized-data'),false);
+    assert.equal(JSON.parse(await readFile(join(f.root,'cwd','last-results.json'),'utf8'))[0].code,'rejected');
+    assert.equal(f.options.execution.pendingToolCalls(f.options.nativeContextId).length,0);
+  } finally { await f.cleanup(); }
+});
+
 test('real SDK forwards only valid authorized CLI calls and retains native session on next turn', async () => {
   const f = await fixture();
   try {

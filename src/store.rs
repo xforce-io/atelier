@@ -386,7 +386,7 @@ impl Store {
         value["executionSupported"] = json!(true);
         value["executionTransports"] = json!(["api", "agent-cli"]);
         value["executionReason"] =
-            json!("API 按冻结连接及本地凭据启动；agent CLI 隔离执行尚未接入");
+            json!("API 按冻结连接及本地凭据启动；agent CLI 按冻结连接及成员专用登录环境隔离执行");
         Ok(value)
     }
 

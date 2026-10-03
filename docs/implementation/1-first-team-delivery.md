@@ -550,3 +550,16 @@ L1 v0.10 / L2 v0.18 不变。提交 d640ea2 的 GitHub Actions `37108902922` 在
 Pi 0.85.1 也已通过同一路由进入 OpenAI Codex 设备认证，当前等待用户授权。工作区已建立本人、Grok 团队负责人、Pi 执行成员和独立 Grok 检验成员，共四名 Worker；职责和显式授权已保存，样例固定基线与可信检查配置已准备。独立检验成员尚须自己的专用登录，不共享团队负责人凭据；服务未启动、未代成员承接或安排工作。
 
 真实 API 已按用户“再试一次”通过产品 CLI/Keychain 重测，当前配置仍返回 HTTP 400 / provider_rejected，不能声称 API 恢复。继续完成 Pi 与独立检验成员认证、实际业务执行/续接和完整 CLI/Skill 团队验收；全部必需范围保持不变。
+
+
+## 2026-10-03：三名原生成员认证通过，真实游戏暴露工具名冲突
+
+L1: reuse v0.10；L2: v0.19（纯技术边界补充）。Pi 执行成员和独立 Grok 检验成员在用户分别授权后，均通过自己的原生登录和真实随机工具挑战；与先前 Grok 负责人一起，三个成员已分别认证。证据为 `.agents/verify-runs/1/native-pi-success-20261003.json` 与 `native-grok-verifier-success-20261003.json`，不包含凭据或会话正文。
+
+通过产品 CLI 配置固定井字棋缺陷输入与可信检查后启动服务。Grok 负责人真实读取消息、承接并安排 Pi 执行，随后对失败消息自主安排返工；宿主没有代成员作业务决定。Pi 的业务工具表含 milkie 保留名称 `read_file`，因此在 SDK 创建实际 Run 前被拒绝，未调用文件工具、未提交产出或交接。核心仅固定未改动基线的 partial 历史；这不是检验失败，也不算成功交付。停服后核对 activeRuns=0，任务与 queued 消息保留。开发证据 `native-game-setup-20261003.json`、`native-game-observations-20261003.jsonl`、`native-game-failure-20261003.json`。
+
+修复仅在 CLI 接入将 `read_file` 暴露为 `atelier_read_file`；Skill 与核心账本使用规范操作名，每轮原生输入说明映射。回调校验后还原名称，恢复使用同一映射；禁止别名碰撞、旧原生名调用，撤权后仍重查。新增跨 Rust/TypeScript 集成直接使用核心生成的负责人、代码执行者、代码检验者工具表经过真实 milkie SDK；原生 CLI 为确定性替身，不算模型验收。另保存 CLI terminal 到资源记录，`run show` 和停止原因区分执行失败与资源回收，修正 runtime status 中过时的“尚未接入”说明。
+
+开发回归：56 项 TypeScript、150 项 Rust（14 Unit + 19 CLI + 117 core）通过，11 项环境测试默认 ignored；格式、Clippy 通过。镜像重建为 `sha256:f2a0d78b55cb5b3afdff90887582f0baecec23d3eb321947a8712ac8ea2346eb`。新镜像须使用新冻结执行配置，不覆盖旧任务绑定；旧认证成功不能替代新配置的 prepare/login/test。完整服务联合测试与修复后的原生团队路径另记结果。API 仍为 provider_rejected；CLI 与 Skill 全部 L1.8、独立审查和合入尚未完成。
+
+实际 CLI/PTY/SQLite/Docker/milkie 联合回归通过，证据 `.agents/verify-runs/1/cli-runtime-7ffa8b69-4067-4442-b5fd-d8f3430c4ce6.json`。新增核对 `run show` 保存 completed terminal、资源停止和可见停止原因；同一测试继续覆盖诊断客户端崩溃核对、跨消息原生续接与只读恢复、任务隔离和停服清理。该测试明确使用登录/Pi 协议替身，nativeCli=false/model=false。
