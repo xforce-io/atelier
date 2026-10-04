@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Readable, Writable } from 'node:stream';
 import type { ForwardTool, ToolOperation } from './tool-ledger.js';
 
-export const milkieCommit = 'a3c1af0e479c9307140e6335da0e55efcf8785cc';
+export const milkieCommit = 'a8e4ea9a65550e27af07ca6b25c2cf0d30e3a0e4';
 const maxFrame = 2 * 1024 * 1024;
 const maxBytes = 32 * 1024 * 1024;
 const maxFrames = 1024;

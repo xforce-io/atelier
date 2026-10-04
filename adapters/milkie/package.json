@@ -14,7 +14,7 @@
     "test:cli-runtime": "npm run build && node --test dist/test/cli-runtime.live.js"
   },
   "dependencies": {
-    "@freemanxu/milkie": "file:vendor/milkie-a3c1af0e479c9307140e6335da0e55efcf8785cc.tgz",
+    "@freemanxu/milkie": "file:vendor/milkie-a8e4ea9a65550e27af07ca6b25c2cf0d30e3a0e4.tgz",
     "ajv": "8.17.1"
   },
   "devDependencies": {

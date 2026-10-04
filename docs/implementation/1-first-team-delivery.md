@@ -938,3 +938,14 @@ S4.A2的CLI与Skill真实拒绝、返工和新版接受路径均已闭合。当�
 随后使用原成员专用登录目录及原工作区环境锁，在新镜像、生产限制代理和隔离容器中运行实际SDK模型检查；没有复制登录材料、改已有任务或业务额度。Pi openai-codex/gpt-5.6-sol在预算2时调用2次无副作用检查工具，SDK记录failed/iteration_budget_exhausted、exhausted=true且stopped；同一会话随后在预算50下调用1次并succeeded/stopped。Grok grok-4.7-build-fast预算2时调用1次后failed/native_cancelled、exhausted=false，未满足期望预算终态；同一会话随后预算50成功调用1次。两者资源已按归属清理。此为真实SDK组件检查，不替代新的完整CLI/Skill团队验收，也没有直接记录提供商HTTP请求次数。Grok预算路径不能记pass，需核对真实原生停止事件并反馈上游。
 
 证据milkie-275-integration-summary.json、milkie-275-native-budget.json及其引用原始日志。既有小游戏正式接受保持，历史真实团队证据仍绑定原SDK/镜像。新候选尚未获得独立审查PASS；旧审查覆盖缺口及本次真实Grok差异未关闭，未创建Atelier PR或合入，不宣称端到端完成。
+
+
+## 2026-10-05：Grok 预算终态修复复验与独立审查续接
+
+固定消费 milkie PR #276 的提交 `a8e4ea9a65550e27af07ca6b25c2cf0d30e3a0e4`（尚未合入），沿用 L1 v0.10，L2 更新为 v0.28。Grok 已观察到的预算耗尽不再被后到取消事件覆盖，正常取消、超时和会话不匹配保持原分类。原 Task、操作账本、用户接受及额度历史保留。
+
+新镜像 `sha256:e39b23524b6d1d3ea6fe2c1afb5453c673c2cd0b373b09619ec6917fe4852edc` 使用 Grok 1.0.46 和 Pi 0.85.1；使用原 Worker 专用登录环境、生产隔离启动器与受限出站代理，运行真实 Grok SDK 组件检查。预算2时实际事件为 max_turns_reached → end(cancelled)，最终 failed/iteration_budget_exhausted、exhausted=true、stopped=true；同一原生会话下一次预算50 succeeded/stopped。全部本次容器和网络已按归属清理，没有修改业务任务或复制凭据。该记录不等于新完整团队验收，提供商HTTP请求次数未直接观测。
+
+固定提交快照的 SDK execution 76项、当前 Atelier TypeScript 66项、Rust 161项（13项环境测试 ignored）、格式与 Clippy、container/login/runtime 三项 Docker 接线回归均通过。三项接线使用协议替身，不冒充真实模型。旧/新 SDK 包的456个 dist 产物中451个摘要相同，变化仅在execution/adapters及execution/worker相关产物；API历史证据保留原版本，代码同一性只支持适用性核对，不改签成新API运行。
+
+脱敏证据位于本地 `.agents/verify-runs/1/`：`milkie-275-fixed-native-budget-trace.json`、`milkie-275-fixed-artifact-diff.json` 及对应原始日志。旧独立审查保留 BLOCKED 原文；用户本轮明确要求继续完成，正在对当前候选补审剩余8个文件、相对旧目标的修复增量和58项逐分支原始证据。不提前标记独立PASS、Story验收或合入完成。

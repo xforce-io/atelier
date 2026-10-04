@@ -4,7 +4,7 @@
 
 ## 固定依赖
 
-使用 milkie 修复提交 `a3c1af0e479c9307140e6335da0e55efcf8785cc`（[PR #276](https://github.com/xforce-io/milkie/pull/276)，尚未合入）。固定 Git 快照包含空 assistant 请求投影修复，以及原生 CLI 每次启动的模型迭代预算和工具 UTF-8 字节边界。Atelier 显式设置50次模型迭代，工具结果及核对输出各限256 KiB，编码请求限2 MiB；能力不足不启动。checkpoint、已有会话和任务额度保留；依赖升级后须重新核对诊断与镜像，旧成功记录不能改签为新环境验证。NPM 的 `@freemanxu/milkie@0.1.1` 包早于这些能力，不能以相同版本号当作兼容版本。
+使用 milkie 修复提交 `a8e4ea9a65550e27af07ca6b25c2cf0d30e3a0e4`（[PR #276](https://github.com/xforce-io/milkie/pull/276)，尚未合入）。固定 Git 快照包含空 assistant 请求投影修复，以及原生 CLI 每次启动的模型迭代预算、Grok 后续取消事件的预算事实保留和工具 UTF-8 字节边界。Atelier 显式设置50次模型迭代，工具结果及核对输出各限256 KiB，编码请求限2 MiB；能力不足不启动。checkpoint、已有会话和任务额度保留；依赖升级后须重新核对诊断与镜像，旧成功记录不能改签为新环境验证。NPM 的 `@freemanxu/milkie@0.1.1` 包早于这些能力，不能以相同版本号当作兼容版本。
 
 准备一个包含该提交的 milkie Git 仓库，在本目录运行：
 
