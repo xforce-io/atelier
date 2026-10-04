@@ -860,3 +860,16 @@ DeepSeek 负责人读取反馈后未保存有效处理结果；正式恢复原�
 
 
 随后在修复提交 `204e288` 上正式回应并落实同一原投递的恢复，原负责人上下文resume=true启动Run `d78f7fb1…`；currentTurn预算错误消失，原生调用立即MODEL_BAD_RESPONSE，零新增业务工具操作。对失败checkpoint内存副本的一次无业务副作用诊断明确HTTP400 `Invalid assistant message: content or tool_calls must be set`；诊断合成结束只终止诊断，不表示业务恢复。全部资源停止，服务stopped/activeRuns=0，Task/current产出/验收请求不变、恢复待办保留。证据 `human-rejection-budget-resume-result-20261004.json` 与 `human-rejection-resume-diagnostic-20261004.jsonl`；已补充 [milkie #273 场景](https://github.com/xforce-io/milkie/issues/273#issuecomment-5979495299)。没有继续盲目重试、改写checkpoint或丢弃上下文；CLI第二次质量返工等待正式当前拒绝及上游恢复修复，Skill正确新版等待本人新决定。
+
+
+## 2026-10-04：Skill 拒绝后新版已接受，CLI 第二次拒绝保留
+
+用户对已经展示的两份新版明确分别决定：接受 Skill 当前交付，CLI 当前交付继续修复。主宿主先限定到新请求 `dc3d7df3…` / 产出 `c5505e60…` 与新请求 `42ceec28…` / 产出 `9153baee…`，再核对 Task 修订3/请求修订1；未引用旧游戏接受或将开发授权当作验收。直接CLI保存当前第二次拒绝，指出声称平局的第9步实际X占据2/5/8获胜，要求修正两局示例、重新独立检验和请求新版验收。
+
+实际Pi 0.85.1 / openai-codex gpt-5.6-sol产品Skill重新查询冻结本人、当前产出、Pi独立19/19及资源停止事实，以18次工具调用、零错误提交一次新版接受。请求dc3d7df3…accepted/revision2、Task badc2940…closed/accepted/revision4，正式记录绑定原修订3、产出c5505e60…、检验f566b6c8…及脱敏decision-ref。旧请求4d39c2f9…仍rejected，原拒绝原因及旧版产出保留，不永久阻断新交付。12个既有Run全部stopped、无本任务待处理投递，服务stopped；宿主PID63680正常退出且已不存在。证据 `human-rejection-new-human-decisions-result-20261004.json`。
+
+结合此前真实未决定宿主返回待办、实际旧版拒绝、返工新版期间实际Skill核对旧人类决定不适用于新版且不提交新版决定，以及本次新的明确接受，S4.A7四分支开发证据齐备。过期人类决定分支证明的是旧交付的真实拒绝不能沿用到新交付；旧请求状态仍为rejected，不称其为superseded。另一次明确合成旧请求accept冲突只补充核心门禁，不冒充人类接受；S4.A3的乱序superseded fixture仍单独标示。逐分支来源及摘要见 `skill-human-decision-coverage-20261004.json`。
+
+CLI请求42ceec28…已rejected/revision2、本人请求投递handled，Task e57d3790…仍active/revision3/current9153baee…。新拒绝结果形成独立投递f707abb1…；显式启动服务后，原负责人以原上下文resume=true处理此新消息，Run8385d2ee…再次MODEL_BAD_RESPONSE，零新业务操作。该消息blocked、恢复待办保存，未开始第二次返工；Task总Run为15/20、返工仍1/2，没有重置额度或上下文。服务已停止、全部Run确认停止。此新消息不是对旧受阻投递的盲目重试；后续仍须milkie #273修复。证据 `cli-second-human-rejection-observations-20261004.jsonl` 与上面的正式决定结果。
+
+开发证据现为56/58，剩余S6.A2（报告任务原失败上下文恢复）与S4.A2（两入口真实拒绝后新版接受：Skill已闭合，CLI未闭合）。项目产品代码未改，沿当前代码检查点2ba55b3的 [CI 37199214846](https://github.com/xforce-io/atelier/actions/runs/37199214846)：159项Rust、59项TypeScript、格式和Clippy通过；13项环境测试仍默认ignored。未完成全部必需验收、独立审查、PR或合入。
