@@ -14,6 +14,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+// A 256 KiB UTF-8 file can require six JSON bytes per content byte.
+// Keep encoding overhead separate from the unchanged domain/result limits.
+pub(crate) const MAX_TOOL_REQUEST: usize = 2 * 1024 * 1024;
+
 #[derive(Clone)]
 pub struct MemberBinding {
     epoch: String,
@@ -278,8 +282,8 @@ impl Store {
             text(id, "旧调用标识", 256)?;
         }
         let bytes = serde_json::to_vec(operation)?;
-        if bytes.len() > 256 * 1024 {
-            return Err(Error::Invalid("旧调用超过 256 KiB".into()));
+        if bytes.len() > MAX_TOOL_REQUEST {
+            return Err(Error::Invalid("旧调用 JSON 超过 2 MiB".into()));
         }
         let origin: Run = load(&tx, "runs", &operation.originating_run_id)?;
         if origin.id == run.id
@@ -417,8 +421,8 @@ impl Store {
             text(id, "工具调用标识", 256)?;
         }
         let bytes = serde_json::to_vec(operation)?;
-        if bytes.len() > 256 * 1024 {
-            return Err(Error::Invalid("工具请求超过 256 KiB".into()));
+        if bytes.len() > MAX_TOOL_REQUEST {
+            return Err(Error::Invalid("工具请求 JSON 超过 2 MiB".into()));
         }
         let fingerprint = format!("{:x}", Sha256::digest(bytes));
         let origin: Run = load(&tx, "runs", &operation.originating_run_id)?;

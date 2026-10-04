@@ -20,7 +20,10 @@ interface Record {
 export interface RecoveredOperation { operationId: string; name: string; result: unknown; }
 export type ForwardTool = (operation: ToolOperation, signal?: AbortSignal) => Promise<unknown>;
 export type ReconcileTool = (deliveryId: string, operation: ToolOperation, signal?: AbortSignal) => Promise<unknown>;
-const limit = 256 * 1024;
+// JSON escaping expands a valid 256 KiB text file by up to six times.
+const inputLimit = 2 * 1024 * 1024;
+const resultLimit = 256 * 1024;
+const recordLimit = inputLimit + resultLimit + 4096;
 function stable(value: unknown): string {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
   if (typeof value === 'number' && Number.isFinite(value)) return JSON.stringify(value);
@@ -81,7 +84,7 @@ export class ToolLedger {
       if (entry.isFile() && temporaryName.test(entry.name)) continue;
       if (entry.isFile() && recordName.test(entry.name)) {
         const metadata = await fs.lstat(file);
-        if (metadata.size > 3 * limit) throw new Error('tool_ledger_corrupt');
+        if (metadata.size > recordLimit) throw new Error('tool_ledger_corrupt');
         const raw = JSON.parse(await fs.readFile(file, 'utf8')) as Record;
         deliveryDirectoryId(raw.deliveryId);
         const record = await new ToolLedger(root, raw.deliveryId).read(file);
@@ -126,7 +129,7 @@ export class ToolLedger {
     for(const record of pending.values()) {
       const previous=new ToolLedger(join(root,record.deliveryId),record.deliveryId);
       const result=await reconcile!(record.deliveryId,structuredClone(record.operation));
-      if(Buffer.byteLength(stable(result))>limit)throw new Error('tool_result_too_large');
+      if(Buffer.byteLength(stable(result))>resultLimit)throw new Error('tool_result_too_large');
       ledger.foreign.push({ledger:previous,file:previous.file(record.operation.originatingRunId,record.operation.toolCallId),record,result});
     }
     return ledger;
@@ -168,11 +171,12 @@ export class ToolLedger {
   private async read(file: string): Promise<Record | undefined> {
     let stat;
     try { stat = await fs.lstat(file); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error; }
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 3 * limit) throw new Error('tool_ledger_corrupt');
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > recordLimit) throw new Error('tool_ledger_corrupt');
     const record = JSON.parse(await fs.readFile(file, 'utf8')) as Record;
     if (!record || record.version !== 1 || record.deliveryId !== this.deliveryId || !record.operation || !['pending','completed'].includes(record.state)
       || (record.state === 'completed' && !Object.hasOwn(record,'result'))) throw new Error('tool_ledger_corrupt');
     for (const id of [record.operation.operationId, record.operation.originatingRunId, record.operation.toolCallId, record.operation.name]) identifier(id);
+    if (Buffer.byteLength(stable(record.operation)) > inputLimit || (record.state === 'completed' && Buffer.byteLength(stable(record.result)) > resultLimit)) throw new Error('tool_ledger_corrupt');
     if (this.file(record.operation.originatingRunId, record.operation.toolCallId) !== file || hash(stable([record.operation.name,record.operation.input])) !== record.fingerprint) throw new Error('tool_ledger_corrupt');
     return record;
   }
@@ -194,7 +198,7 @@ export class ToolLedger {
   private async forward(file: string, record: Record, forward: ForwardTool): Promise<unknown> {
     const result = await forward(structuredClone(record.operation));
     const serialized = stable(result);
-    if (Buffer.byteLength(serialized) > limit) throw new Error('tool_result_too_large');
+    if (Buffer.byteLength(serialized) > resultLimit) throw new Error('tool_result_too_large');
     record.state = 'completed';
     record.result = JSON.parse(serialized) as unknown;
     await this.write(file,record);
@@ -204,7 +208,7 @@ export class ToolLedger {
     return this.serial(async () => {
       for (const id of [runId,callId,name]) identifier(id);
       const payload = stable([name,input]);
-      if (Buffer.byteLength(payload) > limit) throw new Error('tool_input_too_large');
+      if (Buffer.byteLength(payload) > inputLimit) throw new Error('tool_input_too_large');
       await this.ensure();
       const file = this.file(runId,callId);
       let record = await this.read(file);
@@ -214,6 +218,7 @@ export class ToolLedger {
         return this.forward(file,record,forward);
       }
       record = {version:1,deliveryId:this.deliveryId,operation:{operationId:randomUUID(),originatingRunId:runId,toolCallId:callId,name,input:JSON.parse(stable(input)) as unknown},fingerprint:hash(payload),state:'pending'};
+      if (Buffer.byteLength(stable(record.operation)) > inputLimit) throw new Error('tool_input_too_large');
       await this.write(file,record);
       return this.forward(file,record,forward);
     });

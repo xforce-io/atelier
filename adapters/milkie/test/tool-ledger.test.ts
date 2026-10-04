@@ -5,6 +5,35 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ToolLedger, type ToolOperation } from '../src/tool-ledger.js';
 
+test('escaped 256 KiB file arguments remain recoverable with the original operation identity',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'atelier-ledger-file-'));
+  try {
+    const content='\0'.repeat(256*1024);
+    const effects=new Map<string,unknown>();let original:ToolOperation|undefined;
+    const first=await ToolLedger.openDelivery(root,'delivery');
+    await assert.rejects(first.call('run','call','write_file',{path:'notes.txt',content},async operation=>{
+      assert.ok(Buffer.byteLength(JSON.stringify(operation))>512*1024);
+      original=operation;effects.set(operation.operationId,{ok:true,size:Buffer.byteLength(content)});
+      throw new Error('lost_reply_after_commit');
+    }),/lost_reply_after_commit/);
+    const next=await ToolLedger.openDelivery(root,'delivery');
+    const recovered=await next.recover(async operation=>{
+      assert.deepEqual(operation,original);return effects.get(operation.operationId);
+    });
+    assert.equal(recovered.length,1);assert.equal(effects.size,1);
+    const retry=await next.call('run','call','write_file',{path:'notes.txt',content},async operation=>{
+      assert.deepEqual(operation,original);return effects.get(operation.operationId);
+    });
+    assert.deepEqual(retry,{ok:true,size:256*1024});assert.equal(effects.size,1);
+    let forwarded=false;
+    await assert.rejects(next.call('run','oversize','write_file',{content:'x'.repeat(2*1024*1024)},async()=>{
+      forwarded=true;return {ok:true};
+    }),/tool_input_too_large/);
+    assert.equal(forwarded,false);
+    await assert.rejects(next.call('run','large-result','task_read',{},async()=>({content:'x'.repeat(256*1024)})),/tool_result_too_large/);
+  }finally{await rm(root,{recursive:true,force:true});}
+});
+
 test('delivery-scoped ledger migrates completed old records without replay and preserves original identity',async()=>{
   const root=await mkdtemp(join(tmpdir(),'atelier-ledger-'));
   try {

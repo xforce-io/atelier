@@ -75,7 +75,7 @@ test('wrong capability, changed Skill and oversized unframed data are rejected',
       h.send(1,'hello',caps);const channel=await connecting;await h.next();
       const rejected=assert.rejects(channel.start(),/protocol_invalid/);
       if(variant==='skill')h.send(2,'start',{skill:'unexpected'});
-      else h.input.write('x'.repeat(512*1024+1));
+      else h.input.write('x'.repeat(2*1024*1024+1));
       await rejected;
     }
     h.output.destroy();
@@ -99,4 +99,19 @@ test('reconciliation retains current pipe scope while naming the historical deli
   h.send(3,'tool.result',{ok:false,error:{code:'not_executed'}},operation.operationId);
   assert.deepEqual(await pending,{ok:false,error:{code:'not_executed'}});
   await h.channel.finish({stopReason:'completed',nativeStopReason:'fixture',recoveredOperations:1});await h.next();h.output.destroy();
+});
+
+test('a maximum-size UTF-8 file survives JSON escaping in the private pipe',async()=>{
+  const h=await started();
+  const content='\0'.repeat(256*1024);
+  const operation={operationId:'escaped-file',originatingRunId:'run',toolCallId:'write',name:'write_file',input:{path:'notes.txt',content}};
+  const pending=h.channel.forward(operation);
+  const frame=await h.next();
+  assert.ok(Buffer.byteLength(JSON.stringify(frame))>512*1024);
+  assert.deepEqual(frame.payload,operation);
+  h.send(3,'tool.result',{ok:true},operation.operationId);
+  assert.deepEqual(await pending,{ok:true});
+  assert.equal(h.channel.signal.aborted,false);
+  await h.channel.finish({stopReason:'completed',nativeStopReason:'fixture',recoveredOperations:0});
+  await h.next();h.output.destroy();
 });

@@ -3,7 +3,7 @@ import type { Readable, Writable } from 'node:stream';
 import type { ForwardTool, ToolOperation } from './tool-ledger.js';
 
 export const milkieCommit = 'da7767790bcb38e30aa49910ad05fba3670689ca';
-const maxFrame = 512 * 1024;
+const maxFrame = 2 * 1024 * 1024;
 const maxBytes = 32 * 1024 * 1024;
 const maxFrames = 1024;
 export interface Scope { taskId: string; runId: string; deliveryId: string; }

@@ -15,7 +15,7 @@ use tokio::{
 };
 
 pub const MILKIE_COMMIT: &str = "da7767790bcb38e30aa49910ad05fba3670689ca";
-const MAX_FRAME: usize = 512 * 1024;
+const MAX_FRAME: usize = 2 * 1024 * 1024;
 const MAX_FRAMES: u64 = 1024;
 const MAX_BYTES: usize = 32 * 1024 * 1024;
 

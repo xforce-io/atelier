@@ -5616,6 +5616,211 @@ async fn real_docker_recovery_requires_ownership_and_keeps_other_run_resources_u
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn member_file_write_maximum_escaped_content_crosses_rust_node_pipe() {
+    use atelier::channel::{Capabilities, ChannelConfiguration};
+    use std::process::Stdio;
+    let mut f = Fixture::new(false);
+    let (run, _) = f.prepare_code_execution(&format!("sha256:{}", "a".repeat(64)));
+    let database = Database::open(f.dir.path().into(), 8).await.unwrap();
+    database
+        .client()
+        .runtime_prepare_candidate("service".into(), run.id.clone())
+        .await
+        .unwrap();
+    f.store.runtime_begin_launch("service", &run.id).unwrap();
+    let mut child = tokio::process::Command::new("node")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/member-channel.mjs"
+        ))
+        .env_clear()
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    f.store
+        .runtime_child_started("service", &run.id, child.id().unwrap(), "escaped-file-pipe")
+        .unwrap();
+    let binding = f.store.bind_member("service", &run.id).unwrap();
+    let content = "\0".repeat(256 * 1024);
+    let operation = member_operation(
+        &run,
+        "escaped-pipe",
+        "write_file",
+        json!({"path":"escaped.txt","content":content}),
+    );
+    assert!(serde_json::to_vec(&operation).unwrap().len() > 512 * 1024);
+    let skill = "明确的私有管道协议夹具，不是模型验收";
+    let (_control, stop) = tokio::sync::watch::channel(false);
+    let terminal = tokio::time::timeout(
+        Duration::from_secs(10),
+        atelier::channel::serve(
+            child.stdout.take().unwrap(),
+            child.stdin.take().unwrap(),
+            database.client(),
+            binding.clone(),
+            ChannelConfiguration {
+                scope: f.store.member_scope(&binding).unwrap(),
+                capabilities: Capabilities::api(skill),
+                start: json!({"skill":skill,"mode":"normal","operations":[operation]}),
+            },
+            stop,
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(terminal.stop_reason, "completed");
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), child.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .success()
+    );
+    let result = database
+        .client()
+        .member_call(binding, operation)
+        .await
+        .unwrap();
+    assert_eq!(result["ok"], true, "{result}");
+    assert_eq!(result["data"]["revision"], 2, "重复调用不能再次写入");
+    assert_eq!(result["data"]["file"]["size"], content.len());
+    assert_eq!(
+        std::fs::read(
+            f.dir
+                .path()
+                .join("objects/blobs")
+                .join(result["data"]["file"]["sha256"].as_str().unwrap())
+        )
+        .unwrap(),
+        content.as_bytes()
+    );
+    database.close().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn member_file_write_limits_raw_utf8_separately_from_json_request_size() {
+    let mut f = Fixture::new(false);
+    let (run, _) = f.prepare_code_execution(&format!("sha256:{}", "a".repeat(64)));
+    let database = Database::open(f.dir.path().into(), 8).await.unwrap();
+    let client = database.client();
+    client
+        .runtime_prepare_candidate("service".into(), run.id.clone())
+        .await
+        .unwrap();
+    f.store.runtime_begin_launch("service", &run.id).unwrap();
+    let run = f
+        .store
+        .runtime_child_started("service", &run.id, 321, "fixture-file-budget")
+        .unwrap();
+    let binding = f.store.bind_member("service", &run.id).unwrap();
+    for (index, content) in [
+        "\n".repeat(200 * 1024),
+        "x".repeat(256 * 1024),
+        "\0".repeat(256 * 1024),
+        "中".repeat(256 * 1024 / 3),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let path = format!("large-{index}.txt");
+        let operation = member_operation(
+            &run,
+            &format!("large-{index}"),
+            "write_file",
+            json!({"path":path,"content":content}),
+        );
+        assert!(serde_json::to_vec(&operation).unwrap().len() > 256 * 1024 || index == 3);
+        let result = client
+            .member_call(binding.clone(), operation.clone())
+            .await
+            .unwrap();
+        assert_eq!(result["ok"], true, "{result}");
+        assert_eq!(result["data"]["file"]["size"], content.len());
+        let revision = result["data"]["revision"].clone();
+        assert_eq!(
+            client
+                .member_call(binding.clone(), operation)
+                .await
+                .unwrap(),
+            result
+        );
+        let blob = result["data"]["file"]["sha256"].as_str().unwrap();
+        assert_eq!(
+            std::fs::read(f.dir.path().join("objects/blobs").join(blob)).unwrap(),
+            content.as_bytes()
+        );
+        let listed = client
+            .member_call(
+                binding.clone(),
+                member_operation(
+                    &run,
+                    &format!("list-{index}"),
+                    "list_files",
+                    json!({"prefix":path}),
+                ),
+            )
+            .await
+            .unwrap();
+        assert_eq!(listed["data"]["revision"], revision, "请求重试不能重复写入");
+    }
+    let before = client
+        .member_call(
+            binding.clone(),
+            member_operation(&run, "before-invalid", "list_files", json!({})),
+        )
+        .await
+        .unwrap();
+    let too_large = member_operation(
+        &run,
+        "too-large",
+        "write_file",
+        json!({"path":"rejected.txt","content":"x".repeat(256 * 1024 + 1)}),
+    );
+    let rejected = client
+        .member_call(binding.clone(), too_large.clone())
+        .await
+        .unwrap();
+    assert_eq!(rejected["ok"], false, "{rejected}");
+    assert_eq!(rejected["error"]["code"], "invalid_request");
+    assert_eq!(
+        client
+            .member_call(binding.clone(), too_large)
+            .await
+            .unwrap(),
+        rejected,
+        "原始内容超限的拒绝也须持久保存"
+    );
+    let over_wire = member_operation(
+        &run,
+        "over-wire",
+        "task_read",
+        json!({"padding":"x".repeat(2 * 1024 * 1024)}),
+    );
+    assert!(
+        client
+            .member_call(binding.clone(), over_wire)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("工具请求 JSON 超过 2 MiB")
+    );
+    let after = client
+        .member_call(
+            binding.clone(),
+            member_operation(&run, "after-invalid", "list_files", json!({})),
+        )
+        .await
+        .unwrap();
+    assert_eq!(before, after, "超限写入不能改变候选");
+    database.close().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn member_file_tools_publish_atomically_and_verifier_only_reads_fixed_artifact() {
     let mut f = Fixture::new(false);
     let (run, verifier) = f.prepare_code_execution(&format!("sha256:{}", "a".repeat(64)));

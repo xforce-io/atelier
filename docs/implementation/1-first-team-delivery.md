@@ -912,3 +912,16 @@ CLI从最新第二次人类拒绝的原投递f707abb1恢复，原负责人953f4b
 用户在当前新版 CLI 交付说明、README 链接和待验收请求之后明确回复“我 ok”。真实 CLI 核对 Task 修订3、请求0208ffae修订1及产出24a35b2f后，保存该次明确接受。随后独立查询：Task e57d3790为closed/accepted、修订4；请求0208ffae为accepted、修订2；正式验收绑定当前产出及独立检验71db1c82。第二次拒绝42ceec28仍为rejected；原20/20 Run和2/2返工额度没有重置，Skill已接受的交付没有再次提交决定。来源`milkie-273-cli-human-accepted-result.json`。
 
 S4.A2的CLI与Skill真实拒绝、返工和新版接受路径均已闭合。当前58个必需项的开发证据齐备，冻结索引见`acceptance-audit-ready-review-20261004.json`；这不表示已获独立审查或可以直接合入。原提交7e13ee6的CI 37204383347全部通过；本次仅追加验收记录，代码仍为60f9e88的依赖接入候选。原生模型证据与新固定镜像接线证明的版本边界保持，交给独立Reviewer核对。
+
+
+## 2026-10-04：独立审查发现与文件编码边界修复
+
+冻结目标6cecfec对比base d3721db的独立原生Codex审查（gpt-6.1-sol，本机绑定、只读上下文）确认三个P2：原生CLI没有强制每Run最多50次模型迭代；合法工具结果超过64 KiB被误判为不确定；原始文件允许256 KiB，但整个JSON请求也限256 KiB，合法内容因转义和元数据开销被拒绝。完整审查原文保存在`independent-review-complete.md`，结论BLOCKED、human: required。全文检查116/124文件，仍有8个设计、记录、锁文件和测试文件未完成；58个ID/84份证据的存在及摘要已核对，但完整逐分支原始证据审计尚未签署。开发证据收齐不等于独立验收PASS。
+
+[milkie #275](https://github.com/xforce-io/milkie/issues/275) 汇总SDK模型迭代预算、合法工具结果和编码输入的能力缺口，按此前分工交milkie团队处理；上游提票不表示修复。Atelier原生CLI调用方仍需在消费SDK修复时同步传递预算、对齐结果边界。用户针对新版CLI游戏的“我 ok”已经落实为正式接受，不扩为整个feature发布批准。
+
+本次沿L1 v0.10修订L2 v0.26，只修本仓库文件编码边界：原始文件内容仍限256 KiB，工具结果仍限256 KiB；工具调用及核对请求、Rust与TypeScript私有通道单帧各限2 MiB，账本为请求、结果及有限元数据分别预留空间。异步文件准备与事务入口使用相同请求上限；1024帧、32 MiB累计传输、100次工具调用及任务额度保持。原256 KiB文件标准没有降低，SDK仍旧的64 KiB输入/结果门禁尚未修复。
+
+新增回归核对200 KiB换行、最大ASCII、最坏六倍转义NUL及中文内容，重复调用不重复写入，原始内容超限拒绝及拒绝结果持久化，编码请求超限不改变候选。真实Rust↔Node私有管道将256 KiB NUL传至核心并核对固定文件字节；TypeScript持久账本模拟核心已提交但回执丢失，重新打开后沿用原操作ID、完整结果且效果恰1次。上述为Integration/Unit证据，不伪称新原生模型验收或独立审查通过。
+
+本地Rust全量161项通过，13项环境测试仍ignored；TypeScript61项通过；格式、Clippy及差异检查通过。原始记录`review-file-json-core-regression.log`、`review-file-json-rust-all.log`、`review-file-json-typescript-regression.log`、`review-file-json-clippy.log`。新源码候选须使用自身CI和后续审查，不将6cecfec的审查或旧镜像驾驶改签到新源码；未创建Atelier PR，未合入。

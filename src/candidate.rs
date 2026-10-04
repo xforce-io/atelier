@@ -308,7 +308,7 @@ impl Store {
             params![run.delivery_id, op.operation_id],
             |r| r.get(0),
         )?;
-        if prior || serde_json::to_vec(op)?.len() > 256 * 1024 {
+        if prior || serde_json::to_vec(op)?.len() > crate::member::MAX_TOOL_REQUEST {
             return Ok(None);
         }
         let Ok(command) = parse(op) else {
