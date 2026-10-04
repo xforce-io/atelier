@@ -35,3 +35,6 @@ CLI 和产品 Atelier Skill 分别验证；需要真实成员的路径不可用 
 
 
 2026-10-04：新增确定性 Integration `note_reply_loop_exhausts_persistent_budgets_without_losing_human_recovery`，通过成员工具形成 note/reply 循环直至 4 Run/5 消息耗尽，重开数据库并换服务实例后计数不变，唯一人工事项保留，新请求与明确 retry 均不能继续运行。S7.A4 开发证据齐备；这是约束注入测试，不声称真实模型参与该循环。完整 Story 仍未通过。
+
+
+2026-10-04：S7.A1/A2 的真实宿主退出链路、真实成员安排/返工、实际 Grok 普通问题回复，现与无决定不产生安排、伪装正文不改变权限/验收的明确核心断言合并。158 项 Rust 回归通过，开发证据齐备；S7.A3/A5 及全 Story 仍未验收。

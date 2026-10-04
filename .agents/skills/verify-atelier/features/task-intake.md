@@ -24,3 +24,6 @@ CLI 和产品 Atelier Skill 分别验证；需要真实成员的路径不可用 
 
 
 2026-10-04 补证：`cli-decision-flow-20261004.json` 与 `skill-decision-flow-20261004.json` 记录直接 CLI 和实际 Pi 宿主普通回应/正式回应/受阻/落实/过期/无权闭环，S6.A5 的开发证据齐备；与游戏正式验收分开。`cli-disconnected-create-20261004.json` 配合事务回滚/并发 Integration 覆盖 S6.A4；新旧真实角色快照及不可变配置/显式刷新 Integration 覆盖 S6.A3。S6 全 Story 尚未验收，详见实现记录最新章节。
+
+
+2026-10-04：实际 Pi Skill 在无 Git/Docker 的专用环境提交三个报告任务后退出，业务交由 DeepSeek 处理。API 随后 MODEL_BAD_RESPONSE，重测 HTTP 402；三类决定未齐，S6.A2 保持未通过。原任务/失败/本人恢复事项保留且服务停止，详见 skill-report-provider-failure-20261004.json。

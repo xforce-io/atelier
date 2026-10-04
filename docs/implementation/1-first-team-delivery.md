@@ -2,7 +2,7 @@
 
 日期：2026-10-04。模式：end-to-end；当前阶段：implementation / verify；状态：进行中，未完成全量验收、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结最终验收候选。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
 
-当前依据为 L1 v0.10 / L2 v0.23，产品代码检查点 `a272a31` 的 CI 已通过（156 项 Rust、58 项 TypeScript、格式与 Clippy）。新增边界测试后本地 157 项 Rust、格式与 Clippy 通过；13 项环境测试默认 ignored，其中本轮显式执行的 3 项 Keychain 和 1 项 Docker 检查通过。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有证据；首个游戏已明确验收关闭，其余交付的决定分别保持待办。当前逐项开发证据审计为 **44 项齐备、14 项仍待补分支或核对**，不把尚未审计的条目解释为全部未运行，也不据此宣布任一 Story 全量通过。详见本文末节。
+当前依据为 L1 v0.10 / L2 v0.23，检查点 `90d93de` 的 CI 已通过（157 项 Rust、58 项 TypeScript、格式与 Clippy）。最新消息权限测试后本地 158 项 Rust、格式与 Clippy 通过；13 项环境测试默认 ignored。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **46 项齐备、12 项仍待补分支或核对**，不代表 Story 全量通过。最新报告 Skill 运行遭遇 API 失败，连接重测 HTTP 402，另保留 milkie #273；详见末节。
 
 以下保留各阶段历史检查点，其中“未实现”“未验证”和测试数量均属于对应阶段；当前状态以最新日期记录为准。
 
@@ -748,3 +748,16 @@ L1 reuse v0.10、L2 reuse v0.23；仅补测试与证据，产品行为不变。�
 | S7.A1/A2/A3 | 真实消息协作与“无决定不自动推进”、伪装正文无权威效果、多任务等待不丢消息的断言完整关联。 |
 
 本次查询 milkie #273 仍 open、无新回复。没有绕过失败上下文，也没有代替人类决定；全部必需项齐备后才进入独立审查、PR 与合入。
+
+
+## 2026-10-04：消息权威边界与报告 Skill 的实际 API 障碍
+
+`90d93de` 的 [CI 37189861038](https://github.com/xforce-io/atelier/actions/runs/37189861038) 已通过，157 项 Rust、58 项 TypeScript、格式与 Clippy。沿用 L1 v0.10 / L2 v0.23，新增普通消息伪装已 review/接受/授权的 Integration：同一收件箱的 work.note 与核心 decision.request 保持不同来源和类别，正文不改变 Task、验收请求或权限，保留的核心类别不能由普通发送指定。既有交接/返工测试补断言：没有交接决定时固定产出不产生检验投递，失败通知不产生返工安排或消耗/预留额度。158 项 Rust、Clippy、格式与差异检查通过，日志为 `rust-message-authority-20261004.log`、`clippy-message-authority-20261004.log`。
+
+结合实际 Grok 负责人读取原结果、接收本人问题并以 message_send 选择 work.note 回复的操作记录，以及真实 Pi 宿主退出后的 DeepSeek 全链路、两 CLI 的真实失败返工因果，S7.A1/A2 开发证据齐备；累计 46/58、12 项待补或核对。此前剩余表中的 S7.A1/A2 已移出，S7.A3 仍待完整核对。
+
+为补 S6.A2 的实际 Skill 入口，建立专用中文含空格工作区，PATH 仅含 atelier、node、bash，无 Git/Docker；成员及团队通过真实 CLI 配置，只有 DeepSeek 团队负责人配置执行器。连接检查通过后，实际 Pi 0.85.1 / openai-codex gpt-5.6-sol 加载产品 Skill，以12次工具调用、零命令错误提交资料完整、资料缺失、要求绕过独立检验/人类决定的三个报告目标；各创建结果均 pending/Run 0，随后独立查询并启动服务。宿主 PID 64246 正常退出且已不存在，服务 PID 64680 继续处理；宿主没有代团队负责人承接或安排。
+
+实际运行未完成三类承接结果：第一个 Run 先保存 wait，又试图补充契约和 accept，被核心拒绝“该投递已保存处理结果”；随后三个 API Run 均以 MODEL_BAD_RESPONSE 停止。再次真实 connection test 得到 provider_rejected / HTTP 402。保留三个原 Task/上下文和全部错误；两个未有效处理的投递 blocked，保存本人 recovery，前一个已保存的 wait 仍 handled。服务已显式停止，activeRuns=0，3条本人待办/结果保留；没有自动重试或改写原 checkpoint。
+
+证据 `skill-report-provider-failure-20261004.json`、`skill-report-observations-20261004.jsonl` 保存具名宿主/Skill摘要/调用、初始检查、原生失败与重测；私人会话和凭据仍不提交。S6.A2 保持未通过。HTTP 402 是本轮连接障碍，不能与 milkie #273 的失败上下文续接缺陷混为一个问题；已询问用户恢复连接或指定另一条已配置 API，独立验证继续推进。
