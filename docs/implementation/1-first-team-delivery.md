@@ -2,7 +2,7 @@
 
 日期：2026-10-04。模式：end-to-end；当前阶段：implementation / verify；状态：进行中，未完成全量验收、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结最终验收候选。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
 
-当前依据为 L1 v0.10 / L2 v0.23，检查点 `bc709e7` 的 CI 已通过（158 项 Rust、58 项 TypeScript、格式与 Clippy；13 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **52 项齐备、6 项仍待补分支或核对**，不代表 Story 全量通过。最新报告任务的 HTTP 402 已在用户充值后恢复；原上下文续接仍触发 milkie #273 的空 assistant 消息 HTTP 400，详见末节。
+当前依据为 L1 v0.10 / L2 v0.23，检查点 `8efff33` 的 CI 已通过（158 项 Rust、58 项 TypeScript、格式与 Clippy；13 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **53 项齐备、5 项仍待补分支或核对**，不代表 Story 全量通过。最新报告任务的 HTTP 402 已在用户充值后恢复；原上下文续接仍触发 milkie #273 的空 assistant 消息 HTTP 400，详见末节。
 
 以下保留各阶段历史检查点，其中“未实现”“未验证”和测试数量均属于对应阶段；当前状态以最新日期记录为准。
 
@@ -796,3 +796,12 @@ Pi 初轮只固定原始基线，产出 `d0a72a00…` 的文件与预先固定�
 另以当前实际 CLI 查询接入缺配置、MODEL_BAD_RESPONSE、CONTEXT_BUDGET_REQUIRED_REGION_EXCEEDED 三组故障：原因、责任、原投递及已有 partial 产出仍可查询，无成功验收。上面新服务处理正常任务期间，旧失败记录与任务完全不变，没有自动重放。Run/消息额度耗尽与失败通知原子性由现有明确注入测试补充，不称为真实模型耗尽该额度。证据 `failure-preservation-audit-20261004.json`，结合实际 Skill 的失败查询和当前 CI，S5.A1 开发证据齐备；失败可见性与失败上下文恢复分别判定。
 
 逐项开发证据为52/58，剩余 S6.A2、S4.A2/A3/A4/A7、S5.A2。本轮未改产品代码，沿用 `bc709e7` 的158项 Rust、58项 TypeScript及 [CI 37191322285](https://github.com/xforce-io/atelier/actions/runs/37191322285)。未完成全量验收、独立审查、PR或合入。
+
+
+## 2026-10-04：无效独立检验的实际 Skill 拒绝入口
+
+沿用 L1 v0.10 / L2 v0.23，将已完成检验的人类负责人任务数据库备份到三个独立测试副本；仅在副本中准备验收请求，再分别注入独立检验记录缺失、fail、inconclusive。没有复制凭据或启动副本运行服务。直接CLI各在普通消息声称“review通过”前后尝试一次，实际Pi宿主读取产品Skill后再以不同requestId各尝试两次；共12次负向accept均由核心拒绝，missing为not_found，其余为conflict。Task未关闭、请求仍open，没有验收记录或成功请求账本；原工作区数据库逻辑摘要完全一致。
+
+证据 `invalid-acceptance-skill-result-20261004.json`，实际宿主PID 94281、22次工具调用、exit 0。宿主另有三次 acceptance show 误传Task ID，不能用这些失败查询推断无记录；审计改用正确请求ID及只读SQL确认零记录，原错误保留。CLI帮助与describe现注明该接口读取请求ID对应的已保存验收记录，待决定事项改查task decision；只澄清现有接口语义。
+
+S4.A4开发证据齐备，逐项为53/58，剩余 S6.A2、S4.A2/A3/A7、S5.A2。此处为明确注入的负向测试，不代表真实人类接受/拒绝或真实检验故障，不替代S4.A2/A7。正常代码检查点 `8efff33` 的 [CI 37191840452](https://github.com/xforce-io/atelier/actions/runs/37191840452) 已通过；本次帮助澄清已通过构建、格式检查、4项Skill相关回归及实际help/describe查询，证据 `skill-help-regression-20261004.log`、`acceptance-help-described-20261004.json`。完整验收、独立审查、PR与合入均未完成。

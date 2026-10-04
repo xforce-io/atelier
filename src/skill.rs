@@ -147,7 +147,7 @@ impl Store {
             operation(
                 "objects.read",
                 "worker list/show; team list/show; task list/show; task decision list/show; task acceptance show; task blocker list/show; mailbox list; request show",
-                "查询已保存事实；指定任务后重新 describe 获得其操作范围。",
+                "查询已保存事实；指定任务后重新 describe 获得其操作范围。待决定事项用 task decision list --task <TaskID> 或 task decision show <请求ID>；task acceptance show <请求ID> 读取已保存的接受/拒绝记录，尚未决定返回 not_found。",
             ),
             operation(
                 "setup",

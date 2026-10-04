@@ -347,6 +347,7 @@ enum AcceptanceCommand {
         summary: String,
     },
     Show {
+        /// 验收请求 ID；读取已保存的接受/拒绝记录。待决定事项用 task decision show。
         id: String,
     },
 }
