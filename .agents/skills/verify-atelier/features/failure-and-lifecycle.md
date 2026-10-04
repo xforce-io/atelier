@@ -62,3 +62,6 @@ S5.A11 实际 Pi/Grok 无产出阻塞演练已完成：首执行 Run 查询空�
 
 
 2026-10-04：S5.A13 的原连接前置恢复已逐条核对真实请求、唯一待办、原负责人和原投递处理成功；结合实际 Skill 等待/失败落实/取消与撤权断言，开发证据齐备。证据 leader-connection-recovery-audit-20261004.json。这不代表 API 失败 checkpoint 恢复：最新充值后原会话仍复现 milkie #273。
+
+
+2026-10-04：S5.A1 补齐：当前实际CLI查询接入缺配置、原生运行错误、上下文预算不足，原因/责任/投递/partial产出保留，无假成功；新服务处理其它任务时旧失败记录完全不变。Run/消息额度耗尽另由核心注入测试覆盖。证据 failure-preservation-audit-20261004.json；失败可见性不等同milkie #273失败checkpoint恢复。
