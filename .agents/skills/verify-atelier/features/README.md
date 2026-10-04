@@ -1,6 +1,6 @@
 # 功能地图
 
-Issue #1：异步团队、CLI 与产品 Atelier Skill，L1 v0.10 / L2 v0.21；基础 CLI、Worker 专用准备与登录管理及 CLI 运行服务接线、Worker 专用连接检查已有实现，三名原生 CLI 成员的专用认证和模型工具诊断已通过，真实 Pi 执行、Grok 独立检验及数字负责人发起人类验收已贯通，该游戏已获人类明确接受，完整验收仍未完成，全部 Story 尚未验收通过。[实现记录](../../../../docs/implementation/1-first-team-delivery.md) 区分已有集成测试与未运行的完整验收。旧前台流程证据不证明消息协作通过。
+Issue #1：异步团队、CLI 与产品 Atelier Skill，L1 v0.10 / L2 v0.22；基础 CLI、Worker 专用准备与登录管理及 CLI 运行服务接线、Worker 专用连接检查已有实现，三名原生 CLI 成员的专用认证和模型工具诊断已通过，真实 Pi 执行、Grok 独立检验及数字负责人发起人类验收已贯通，该游戏已获人类明确接受，完整验收仍未完成，全部 Story 尚未验收通过。[实现记录](../../../../docs/implementation/1-first-team-delivery.md) 区分已有集成测试与未运行的完整验收。旧前台流程证据不证明消息协作通过。
 
 2026-10-04 逐项开发证据审计：26 项齐备、32 项仍待补分支或核对。新增真实 Pi 渐进组队及异常诊断；真实 API 与两 CLI 正常业务、两 CLI 失败返工已有证据。该计数不等于 Story 全量通过或独立验收；各条证据与剩余工作见实现记录最新日期章节。
 
@@ -13,3 +13,5 @@ Issue #1：异步团队、CLI 与产品 Atelier Skill，L1 v0.10 / L2 v0.21；�
 | [human-acceptance.md](human-acceptance.md) | S4 / A1–A8 | 本人收件箱待验收、请求/决定查询、明确接受/拒绝、拒绝后新版验收、过期/无权拒绝和指定版本无覆盖导出。 |
 | [failure-and-lifecycle.md](failure-and-lifecycle.md) | S5 / A1、A2、A4、A5、A7–A13 | 客户端退出、服务停止/崩溃、重复投递、撤权、正式阻塞报告/解决、按投递终局显式 retry、本人恢复选择/落实、runtime reconcile 可信资源核对（含 CLI 资源归属与引擎一致性）与任务取消。 |
 | [asynchronous-team.md](asynchronous-team.md) | S7 / A1–A5 | 数字团队不依赖宿主阶段调用，从提交目标持续处理工作消息到人类待办；含普通说明与消息循环。 |
+
+2026-10-04 后续真实交接发现冻结 checkId 对成员不可见，修复及原任务恢复见实现记录最新节；26 项计数为此前检查点，当前候选尚需受影响验证。

@@ -2,7 +2,7 @@
 
 日期：2026-10-04。模式：end-to-end；当前阶段：implementation / verify；状态：进行中，未完成全量验收、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结最终验收候选。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
 
-当前依据为 L1 v0.10 / L2 v0.21，代码检查点 `966725d` 的 CI 已通过（151 项 Rust、58 项 TypeScript、格式与 Clippy；11 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有证据；首个游戏已明确验收关闭，其余交付的决定分别保持待办。当前逐项开发证据审计为 **26 项齐备、32 项仍待补分支或核对**，不把尚未审计的条目解释为全部未运行，也不据此宣布任一 Story 全量通过。详见本文末节。
+当前依据为 L1 v0.10 / L2 v0.22，代码检查点 `966725d` 的 CI 已通过（151 项 Rust、58 项 TypeScript、格式与 Clippy；11 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有证据；首个游戏已明确验收关闭，其余交付的决定分别保持待办。当前逐项开发证据审计为 **26 项齐备、32 项仍待补分支或核对**，不把尚未审计的条目解释为全部未运行，也不据此宣布任一 Story 全量通过。详见本文末节。
 
 以下保留各阶段历史检查点，其中“未实现”“未验证”和测试数量均属于对应阶段；当前状态以最新日期记录为准。
 
@@ -673,3 +673,12 @@ L1 reuse v0.10、L2 reuse v0.21，产品契约不变。基于 `2d6ceb7` 补证�
 新增 `note_reply_loop_exhausts_persistent_budgets_without_losing_human_recovery`：通过实际核心成员工具与 SQLite 注入 note/reply 循环，消耗 4 次 Run、5 条消息后，下一消息被额度拒绝；保存一份人工恢复事项。重开数据库并换服务实例，重复停止观测不增加通知，新消息和正式选择 retry 后的两次重试均不能重置预算；无 queued 成员投递、activeRuns=0。此为确定性边界测试，未调用真实模型，不代替真实团队成功链路。
 
 逐项审计新增齐备项：S1.A8、S6.A3/A4/A5、S2.A1/A7/A8、S3.A2、S5.A8、S7.A4。累计 26/58，剩余 32 项保留各自缺口；已有快照、权限、目录装配、返工预算测试已核对具体断言及通过日志，没有仅凭测试名称计数。原始记录保留于忽略的 `.agents/verify-runs/1/`，当前审计文件为 `acceptance-audit-20261003.json`。实际成员拒收/无产出阻塞、部分 Skill 异常与人类拒绝后新版接受仍未齐备；[milkie #273](https://github.com/xforce-io/milkie/issues/273) 的原失败 API 续接仍待修复。各当前游戏正式决定保留，未自动接受。
+
+
+## 2026-10-04：真实拒收暴露冻结检查名称不可见
+
+`f810422` 的 [CI 37168023529](https://github.com/xforce-io/atelier/actions/runs/37168023529) 已通过。新 Pi Skill 宿主提交演练 Task `4f4c5684…` 后退出，Pi 实际固定产出 `208e28cc…`；初次交接明确缺少运行/检查步骤，Grok 正式拒收，未运行检查。负责人在同一契约与同一产出上补齐步骤并重新交接，检验成员接受后发现 task_read 只返回配置 ID，无法取得 run_check 必需的命名 checkId。七次猜测均被核心拒绝，没有伪造检查或结论；成员随后正式报告 blocker `dfe15f28…`，要求协调者修复可见事实。停服确认 activeRuns=0，全部原始操作、拒收、新交接及阻塞保留于 `skill-handoff-rejection-before-fix-20261004.json`。此前目标文字含检查名称的成功游戏没有覆盖这一条件；不能把本次检验或恢复记为通过。
+
+沿用 L1 v0.10 的成员获得适用信息契约，L2 v0.22 明确 task_read.verificationProfile 返回冻结配置的 id/name/checkId；无配置为 null，不返回执行命令、镜像或路径。工具说明引导从该字段取得 checkId，核心仍拒绝任意检查。新增 Integration 验证无需目标提示就能读取正确标识，并让检验准备测试实际使用读到的名称；两项聚焦测试通过。153 项 Rust、Clippy 和格式检查已通过，原任务真实恢复待续跑；未修改其目标或原生历史来绕过缺口。
+
+另完成独立真实 Skill 恢复选择演练：未配置数字负责人产生唯一 recovery；wait 保留待办，retry 的落实失败持久可查，最后明确 cancel 才关闭测试 Task。实际 Pi 宿主 62 次工具调用无错误，独立查询确认权限不变、Run=0、服务停止。证据 `skill-recovery-options-20261004.json`，不与真实模型修复成功混同。`cli-interrupt-and-stop-20261004.json` 记录写锁等待中的 CLI 收到 SIGINT 后退出，独立服务和已有 queued 任务不受影响，显式停服仍保留任务；`cli-long-input-output-20261004.json` 记录 12206 字节中文/换行/引号/表情目标准确往返，缺参非交互退出、not_found 为单一 JSON 结果。这些补充分支尚待与全部对应标准合并。

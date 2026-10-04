@@ -4884,6 +4884,50 @@ async fn real_docker_check_collects_bound_evidence_and_cannot_be_overridden_by_m
 }
 
 #[test]
+fn member_reads_frozen_check_name_without_goal_hint_or_execution_details() {
+    let mut generic = Fixture::new(true);
+    let (run, binding) = generic.running_member();
+    let plain = generic
+        .store
+        .member_call(
+            &binding,
+            &member_operation(&run, "read", "task_read", json!({})),
+        )
+        .unwrap();
+    assert!(plain["data"]["verificationProfile"].is_null());
+
+    let mut f = Fixture::new(false);
+    let (run, _) = f.prepare_code_execution(&format!("sha256:{}", "a".repeat(64)));
+    f.store.runtime_begin_launch("service", &run.id).unwrap();
+    let run = f
+        .store
+        .runtime_child_started("service", &run.id, 321, "fixture-read-check-name")
+        .unwrap();
+    let binding = f.store.bind_member("service", &run.id).unwrap();
+    let task = f.store.task(&run.task_id).unwrap();
+    let profile = f
+        .store
+        .profile(task.contract.verification_profile.as_ref().unwrap())
+        .unwrap();
+    assert!(!task.goal.contains(&profile.specification.check_id));
+    let view = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(&run, "read", "task_read", json!({})),
+        )
+        .unwrap();
+    assert_eq!(
+        view["data"]["verificationProfile"],
+        json!({"id":profile.id,"name":profile.specification.name,"checkId":profile.specification.check_id})
+    );
+    assert_eq!(
+        view["data"]["contract"]["verification_profile"],
+        view["data"]["verificationProfile"]["id"]
+    );
+}
+
+#[test]
 fn prepared_check_stops_without_launch_and_running_check_keeps_run_ownership() {
     for launched in [false, true] {
         let mut f = Fixture::new(false);
@@ -4918,16 +4962,21 @@ fn prepared_check_stops_without_launch_and_running_check_keeps_run_ownership() {
             )
             .unwrap();
         assert_eq!(invalid["ok"], false);
+        let view = f
+            .store
+            .member_call(
+                &binding,
+                &member_operation(&run, "discover-check", "task_read", json!({})),
+            )
+            .unwrap();
+        let check_id = view["data"]["verificationProfile"]["checkId"]
+            .as_str()
+            .unwrap();
         let result = f
             .store
             .member_call(
                 &binding,
-                &member_operation(
-                    &run,
-                    "check",
-                    "run_check",
-                    json!({"checkId":"tic-tac-toe-browser-v1"}),
-                ),
+                &member_operation(&run, "check", "run_check", json!({"checkId":check_id})),
             )
             .unwrap();
         assert_eq!(result["ok"], true);

@@ -811,6 +811,16 @@ fn member_effect(
         }
         MemberCommand::TaskRead(_) => {
             // No native conversation, credential, workspace path or other task.
+            let verification_profile = task
+                .contract
+                .verification_profile
+                .as_ref()
+                .map(|id| {
+                    let profile: crate::profile::ProfileRecord = load(db, "profiles", id)?;
+                    Ok::<_, Error>(json!({"id":profile.id,"name":profile.specification.name,
+                        "checkId":profile.specification.check_id}))
+                })
+                .transpose()?;
             let mut stmt =
                 db.prepare("SELECT data FROM decisions WHERE task_id=?1 ORDER BY rowid")?;
             let rows = stmt
@@ -829,7 +839,7 @@ fn member_effect(
             return Ok(
                 json!({"id":task.id,"goal":task.goal,"state":task.state,"revision":task.revision,
                 "decisions":decisions,"deliveries":crate::retry::list(db,task,&run.worker_id)?,"blockers":crate::blocker::list(db,&task.id)?,"assignments":crate::assignment::list(db,&task.id)?,"reworks":crate::rework::list(db,&task.id)?,"currentArtifact":task.current_artifact,"handoffs":crate::handoff::list(db,&task.id)?,
-                "contract":task.contract,"responsibilities":{"leader":task.team_snapshot.leader,"executor":task.team_snapshot.executor,"verifier":task.team_snapshot.verifier,"acceptor":task.team_snapshot.acceptor},
+                "contract":task.contract,"verificationProfile":verification_profile,"responsibilities":{"leader":task.team_snapshot.leader,"executor":task.team_snapshot.executor,"verifier":task.team_snapshot.verifier,"acceptor":task.team_snapshot.acceptor},
                 "budget":{"runsUsed":task.runs_used,"messagesUsed":task.messages_used,"reworksUsed":task.reworks_used,"reworksReserved":crate::rework::reserved(db,&task.id)?}}),
             );
         }

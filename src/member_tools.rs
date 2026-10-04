@@ -37,7 +37,7 @@ pub(crate) fn describe(run: &Run, task: &Task) -> Result<Value> {
         ),
         tool(
             "task_read",
-            "查询当前绑定任务、职责、额度和可见待决定事项索引。",
+            "查询当前绑定任务、职责、额度、冻结检查的 verificationProfile.checkId 和可见待决定事项索引。",
             object(json!({}), &[]),
         ),
         tool(
@@ -106,10 +106,10 @@ pub(crate) fn describe(run: &Run, task: &Task) -> Result<Value> {
         && matches!(run.purpose.as_str(), "execute" | "rework")
         && run.permissions.contains(&Permission::Execute)
     {
-        tools.push(tool("run_check","对调用时的候选版本运行冻结命名检查；修改文件后须重新自测。自测不产生独立检验记录，也不能替代独立检验或人工验收。",object(json!({"checkId":id}),&["checkId"])));
+        tools.push(tool("run_check","对调用时的候选版本运行冻结命名检查；checkId 取自 task_read.verificationProfile.checkId，不是配置 ID，不要猜测。修改文件后须重新自测。自测不产生独立检验记录，也不能替代独立检验或人工验收。",object(json!({"checkId":id}),&["checkId"])));
     }
     if run.purpose == "verify" && run.permissions.contains(&Permission::Verify) {
-        tools.push(tool("run_check","接受交接后运行冻结命名检查。核心固定容器、资源限制与证据，不接受命令、镜像、路径或自报结果。",object(json!({"checkId":id}),&["checkId"])));
+        tools.push(tool("run_check","接受交接后运行冻结命名检查；checkId 取自 task_read.verificationProfile.checkId，不是配置 ID，不要猜测。核心固定容器、资源限制与证据，不接受命令、镜像、路径或自报结果。",object(json!({"checkId":id}),&["checkId"])));
         tools.push(tool("verification_submit","依据本 Run 最新实际检查记录提交建议；核心结合证据形成 pass/fail/inconclusive，不接受自报成功替代检查。",object(json!({"evidenceId":id,"recommendation":{"enum":["pass","fail","inconclusive"]},"reason":text}),&["evidenceId","recommendation","reason"])));
         tools.push(tool(
             "handoff_respond",
