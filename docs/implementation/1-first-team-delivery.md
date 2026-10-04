@@ -2,7 +2,7 @@
 
 日期：2026-10-04。模式：end-to-end；当前阶段：implementation / verify；状态：进行中，未完成全量验收、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结最终验收候选。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
 
-当前依据为 L1 v0.10 / L2 v0.23，检查点 `1987206` 的 CI 已通过（158 项 Rust、58 项 TypeScript、格式与 Clippy；13 项环境测试默认 ignored）；新增产出发布事务回归后本地159项Rust、格式与Clippy通过，当前提交CI仍需核对。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **55 项齐备、3 项仍待补分支或核对**，不代表 Story 全量通过。最新报告任务的 HTTP 402 已在用户充值后恢复；原上下文续接仍触发 milkie #273 的空 assistant 消息 HTTP 400，详见末节。
+当前依据为 L1 v0.10 / L2 v0.23，代码检查点 `dce0cf1` 的 [CI 37193684292](https://github.com/xforce-io/atelier/actions/runs/37193684292) 已通过（159 项 Rust、58 项 TypeScript、格式与 Clippy；13 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **55 项齐备、3 项仍待补分支或核对**，不代表 Story 全量通过。最新报告任务的 HTTP 402 已在用户充值后恢复；原上下文续接仍触发 milkie #273 的空 assistant 消息 HTTP 400，详见末节。
 
 以下保留各阶段历史检查点，其中“未实现”“未验证”和测试数量均属于对应阶段；当前状态以最新日期记录为准。
 
@@ -826,3 +826,13 @@ S4.A3沿实际产出发布路径补证。正常契约不允许open验收期间�
 直接CLI与实际Pi 0.85.1 / openai-codex gpt-5.6-sol产品Skill宿主分别尝试两个旧请求的旧修订号和当前修订号，合计8次accept均conflict。Skill实际读取安装包并完成22次工具调用；无任务/产出/请求变更，无旧请求验收记录或接受结局，换requestId与请求修订不能绕过superseded。宿主PID 10221已正常退出；未启动服务，所有fixture Run记录stopped。`task decision list`保留历史，按state判断待办，不以旧记录仍可查询推定仍待决定。
 
 证据 `stale-acceptance-result-20261004.json` 保留两组状态、真实入口与脱敏调用、发布回滚断言和fixture边界；初次脚本将Task结构与包含附加查询字段的task show直接比对失败，已纠正为同入口前后比对，无业务变更。常规159项Rust、格式与Clippy通过，13项环境测试仍默认ignored；此前 [CI 37192893714](https://github.com/xforce-io/atelier/actions/runs/37192893714) 成功。逐项开发证据为55/58，剩余S6.A2、S4.A2/A7。此处负向测试不替代真实人类拒绝后新版接受、Skill实际人类过期决定；完整验收、独立审查、PR与合入均未完成。
+
+## 2026-10-04：当前人类负责人交付的审阅准备
+
+代码检查点 `dce0cf1` 的159项Rust、58项TypeScript、格式与Clippy已经 [CI 37193684292](https://github.com/xforce-io/atelier/actions/runs/37193684292) 核对通过。本轮未改产品代码，不重新运行已通过的全量检查。
+
+人类团队负责人路径的真实任务 `3bd9beb5…` 经Pi返工、Grok独立19/19通过后，实际Pi产品Skill宿主核对当前产出 `9fca3e47…`、检验 `61ddf400…` 和全部四Run已停止，创建唯一验收请求 `10d3b163…`（任务修订3、请求修订1）。23次工具调用零错误，固定产出导出为index.html与中文README，文件摘要与产出清单一致。请求open、投递queued/attempts=0且无Run；Task仍active/outcome=null，运行服务保持stopped/activeRuns=0，仅新增这一条人类待办。宿主PID 19539正常退出且已不存在。
+
+证据 `human-leader-acceptance-ready-20261004.json` 保存实际宿主/模型/Skill摘要、请求账本、前后状态和导出摘要。准备待办没有替人类接受或拒绝，也未操作仍由用户控制的浏览器；此前的“继续”不被当作当前验收决定。计数保持55/58，S4.A2/A7仍缺真实人类决定分支。
+
+上游再次核对：milkie主分支仍为已接入的 `e049f0b`，#273保持open且无新增修复PR；不重置原报告Task、上下文或已提交效果，不本地修改milkie源码。S6.A2仍等待上游修复原失败checkpoint恢复。
