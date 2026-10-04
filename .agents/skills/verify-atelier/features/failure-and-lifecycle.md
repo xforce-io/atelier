@@ -71,3 +71,6 @@ S5.A11 实际 Pi/Grok 无产出阻塞演练已完成：首执行 Run 查询空�
 
 
 2026-10-04：真实API反馈消息恢复时，完整已核对结果使currentTurn估算20223超过原8192区域上限。L2 v0.24将该区域设为32 KiB、总输入保持64 KiB；59项TypeScript回归证明完整结果/稳定操作ID保留与超限失败。原失败记录和checkpoint未改；真实恢复仍待取证，不能据此声称milkie #273修复或S6.A2通过。
+
+
+实际原投递恢复进一步确认：预算错误消失后，原上下文resume=true仍MODEL_BAD_RESPONSE；无副作用诊断为HTTP400空assistant消息，已补milkie #273。零新业务操作、资源停止、原任务/产出/请求与失败待办保留；证据human-rejection-budget-resume-result-20261004.json。预算修复通过不等于原生恢复通过。

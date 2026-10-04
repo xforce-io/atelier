@@ -857,3 +857,6 @@ DeepSeek 执行产生 `9153baee…`，独立冻结检查19/19通过并创建新�
 DeepSeek 负责人读取反馈后未保存有效处理结果；正式恢复原投递时，已核对的四个只读操作结果进入当前输入，UTF-8保守估算20223，超过原8192区域上限，模型调用前返回 CONTEXT_BUDGET_REQUIRED_REGION_EXCEEDED。沿 L1 v0.10 修订 L2 v0.24，将恢复输入区域调整为与轮内工具交换一致的32 KiB，总输入仍64 KiB；不裁剪结果、删除权限指导、修改原 checkpoint 或重置任务。新增真实 milkie runtime 回归证明旧限制失败、新限制完整恢复相同操作ID与结果，并证明超限仍在模型调用前失败；59项TypeScript通过，证据 `api-recovery-budget-old-limit-20261004.log`、`api-recovery-budget-regression-20261004.log`。此处修复的是 Atelier 接入预算，不是 milkie #273。
 
 本节写入时两工作区服务均 stopped/activeRuns=0，失败投递与新验收待办保留。修复后的真实原上下文恢复尚待继续取证；55/58计数不变，S4.A2/A7仍需当前人类决定和完整闭合分支，S6.A2仍等待milkie #273修复。未进入独立审查、PR或合入。
+
+
+随后在修复提交 `204e288` 上正式回应并落实同一原投递的恢复，原负责人上下文resume=true启动Run `d78f7fb1…`；currentTurn预算错误消失，原生调用立即MODEL_BAD_RESPONSE，零新增业务工具操作。对失败checkpoint内存副本的一次无业务副作用诊断明确HTTP400 `Invalid assistant message: content or tool_calls must be set`；诊断合成结束只终止诊断，不表示业务恢复。全部资源停止，服务stopped/activeRuns=0，Task/current产出/验收请求不变、恢复待办保留。证据 `human-rejection-budget-resume-result-20261004.json` 与 `human-rejection-resume-diagnostic-20261004.jsonl`；已补充 [milkie #273 场景](https://github.com/xforce-io/milkie/issues/273#issuecomment-5979495299)。没有继续盲目重试、改写checkpoint或丢弃上下文；CLI第二次质量返工等待正式当前拒绝及上游恢复修复，Skill正确新版等待本人新决定。
