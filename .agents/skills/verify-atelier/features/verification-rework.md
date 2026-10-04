@@ -31,3 +31,5 @@ CLI 和产品 Atelier Skill 分别验证；需要真实成员的路径不可用 
 已终局的 inconclusive 使用 `task verify ... --inconclusive <Verification ID>`，与 `--blocker` 互斥；数字负责人使用 task_arrange 的 verificationId。检查旧交接 superseded 且保留原接收理由/替代依据、新投递须重新接收、新检查 ID/Run 与旧记录不同、总 Run 额度增加而代码返工不增加。明确 pass/fail、旧检验、未停止资源、重复安排均拒绝；新通知写入失败时旧交接替代一并回滚。核心与真实 Docker/CLI Integration 已覆盖，但数字决定仍为 fixture，不冒充真实团队验收。
 
 2026-10-03 真实失败返工证据：任务 `e817a65c…`（Grok 执行/Pi 检验）与 `54460c41…`（Pi 执行/Grok 检验）在创建时明确先原样提交遗留基线检查；各自独立检查真实得到 15 pass / 4 fail，负责人据对应失败检验安排一次返工，新固定版本独立检查 19/19，随后保存各自人类待办。两种 CLI 的执行 context 均跨 Run 保留且返工 resume=true；各自独立检验 context 也跨两次检查续接，与执行 context 不同。操作、因果、原始检查、版本及导出摘要见 `baseline-review-grok-result-20261003.json`、`baseline-review-pi-result-20261003.json`。这是显式基线评审场景，不把初始基线称为合格交付；当前人类试玩/接受及其余异常分支仍未完成。
+
+2026-10-04：真实 Pi/Grok 演练 `4f4c5684…` 完成资料不齐拒收、同产出补齐后新交接；发现冻结 checkId 不可见后由成员正式报阻塞。修复 `615e884` 后原负责人自行核对并解决阻塞，原检验成员新交接后19/19。S3.A3/A6 开发证据齐备；旧 rejected/superseded、当前 accepted 与所有停止事实保留，尚无当前人类接受。见 `skill-handoff-rejection-result-20261004.json`。

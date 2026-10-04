@@ -2,7 +2,7 @@
 
 日期：2026-10-04。模式：end-to-end；当前阶段：implementation / verify；状态：进行中，未完成全量验收、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结最终验收候选。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
 
-当前依据为 L1 v0.10 / L2 v0.22，代码检查点 `966725d` 的 CI 已通过（151 项 Rust、58 项 TypeScript、格式与 Clippy；11 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有证据；首个游戏已明确验收关闭，其余交付的决定分别保持待办。当前逐项开发证据审计为 **26 项齐备、32 项仍待补分支或核对**，不把尚未审计的条目解释为全部未运行，也不据此宣布任一 Story 全量通过。详见本文末节。
+当前依据为 L1 v0.10 / L2 v0.22，代码检查点 `615e884` 的 CI 已通过（153 项 Rust、58 项 TypeScript、格式与 Clippy；11 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有证据；首个游戏已明确验收关闭，其余交付的决定分别保持待办。当前逐项开发证据审计为 **29 项齐备、29 项仍待补分支或核对**，不把尚未审计的条目解释为全部未运行，也不据此宣布任一 Story 全量通过。详见本文末节。
 
 以下保留各阶段历史检查点，其中“未实现”“未验证”和测试数量均属于对应阶段；当前状态以最新日期记录为准。
 
@@ -682,3 +682,14 @@ L1 reuse v0.10、L2 reuse v0.21，产品契约不变。基于 `2d6ceb7` 补证�
 沿用 L1 v0.10 的成员获得适用信息契约，L2 v0.22 明确 task_read.verificationProfile 返回冻结配置的 id/name/checkId；无配置为 null，不返回执行命令、镜像或路径。工具说明引导从该字段取得 checkId，核心仍拒绝任意检查。新增 Integration 验证无需目标提示就能读取正确标识，并让检验准备测试实际使用读到的名称；两项聚焦测试通过。153 项 Rust、Clippy 和格式检查已通过，原任务真实恢复待续跑；未修改其目标或原生历史来绕过缺口。
 
 另完成独立真实 Skill 恢复选择演练：未配置数字负责人产生唯一 recovery；wait 保留待办，retry 的落实失败持久可查，最后明确 cancel 才关闭测试 Task。实际 Pi 宿主 62 次工具调用无错误，独立查询确认权限不变、Run=0、服务停止。证据 `skill-recovery-options-20261004.json`，不与真实模型修复成功混同。`cli-interrupt-and-stop-20261004.json` 记录写锁等待中的 CLI 收到 SIGINT 后退出，独立服务和已有 queued 任务不受影响，显式停服仍保留任务；`cli-long-input-output-20261004.json` 记录 12206 字节中文/换行/引号/表情目标准确往返，缺参非交互退出、not_found 为单一 JSON 结果。这些补充分支尚待与全部对应标准合并。
+
+
+## 2026-10-04：原交接任务恢复并完成独立检验
+
+修复 `615e884` 的 [CI 37168972955](https://github.com/xforce-io/atelier/actions/runs/37168972955) 成功，153 项 Rust、58 项 TypeScript、格式与 Clippy 通过，11 项环境测试默认 ignored。服务使用新二进制恢复原 Task `4f4c5684…`，没有改目标、产出或原生上下文，也没有把 checkId 写进用户目标。
+
+原 Grok 团队负责人处理既有 blocker 消息，从 task_read.verificationProfile 发现正确名称，核对原 Run/资源已停止，自行 blocker_resolve 并安排新交接。原 Grok 检验成员接受后读取该字段、调用 run_check，独立检查 19/19，检验 `ded1991a…` 为 pass。负责人随后发起人工请求 `77f2758f…`；任务 revision 3、active，尚无人类决定。初次 rejected 交接、因 blocker 被 superseded 的第二次交接、新的 accepted 交接均关联同一产出 `208e28cc…`；没有伪造检验失败或重新开始任务。为修复停服时另一个结果处理 Run 被取消，其 blocked 历史与失败通知仍保留。
+
+累计 12 Run、69 条真实成员操作；完成后服务 stopped，全部执行/检查资源已核对停止。固定产出导出摘要一致；没有本次浏览器试玩或正式接受。证据 `skill-handoff-rejection-result-20261004.json` 保存初始候选/修复候选、具名宿主调用、三个交接、阻塞解决、检查、原始业务操作及最终待办。原始失败另保留，不用成功结果覆盖。
+
+本轮新增 S3.A3、S3.A6、S5.A7 的开发证据；S2.A7 追加缺名称修复和原任务真实恢复。逐项开发证据现为 29/58 齐备，剩余 29 项逐条列缺口，不代表全量验收。S5.A11 的真实检验阻塞分支已补，执行成员无产出阻塞仍待验证；S5.A13 的真实 Skill 等待/失败落实/取消已补，与早先模型修复和权限证据的最终汇总仍待核对。完整 58 项、独立审查、PR 与合入均未完成。
