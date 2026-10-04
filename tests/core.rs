@@ -1390,6 +1390,153 @@ fn concurrent_claims_atomically_create_one_run_and_consume_one_budget_unit() {
 }
 
 #[test]
+fn queued_messages_across_tasks_survive_restart_and_never_preempt_active_run() {
+    let mut f = Fixture::new(true);
+    let (first, binding) = f.running_member();
+    let other = f
+        .store
+        .execute(
+            "second-task",
+            &Command::TaskCreate {
+                team_id: f.team.id.clone(),
+                goal: "另一项排队任务".into(),
+            },
+        )
+        .unwrap();
+    let second_task = other["task"]["id"].as_str().unwrap().to_string();
+    let mut queued = vec![(
+        other["delivery"]["deliveryId"]
+            .as_str()
+            .unwrap()
+            .to_string(),
+        second_task.clone(),
+    )];
+    for (n, task) in [
+        first.task_id.clone(),
+        first.task_id.clone(),
+        second_task.clone(),
+    ]
+    .iter()
+    .enumerate()
+    {
+        let sent = f
+            .store
+            .execute(
+                &format!("queued-note-{n}"),
+                &Command::MessageSend {
+                    task_id: task.clone(),
+                    recipient: first.worker_id.clone(),
+                    kind: "work.note".into(),
+                    body: format!("排队说明 {n}"),
+                    reply_to: None,
+                },
+            )
+            .unwrap();
+        queued.push((
+            sent["deliveryId"].as_str().unwrap().to_string(),
+            task.clone(),
+        ));
+    }
+    let before = f.store.mailbox(Some(&first.worker_id)).unwrap();
+    for (delivery, _) in &queued {
+        assert!(
+            f.store
+                .runtime_claim("service", delivery, &first.configuration_id)
+                .is_err()
+        );
+    }
+    assert_eq!(f.store.mailbox(Some(&first.worker_id)).unwrap(), before);
+    assert_eq!(f.store.run(&first.id).unwrap().state, "running");
+    assert!(!f.store.run(&first.id).unwrap().stop_requested);
+    assert_eq!(f.store.task(&second_task).unwrap().runs_used, 0);
+    let finish = member_operation(
+        &first,
+        "wait",
+        "message_respond",
+        json!({"kind":"wait","reason":"等待本人补充","handler":f.human}),
+    );
+    assert_eq!(f.store.member_call(&binding, &finish).unwrap()["ok"], true);
+    f.store
+        .runtime_run_observed_stopped("service", &first.id, "fixture first process stopped")
+        .unwrap();
+    f.store.runtime_request_stop("service").unwrap();
+    f.store.runtime_stopped("service").unwrap();
+    for (n, task) in [first.task_id.clone(), second_task.clone()]
+        .iter()
+        .enumerate()
+    {
+        let sent = f
+            .store
+            .execute(
+                &format!("offline-note-{n}"),
+                &Command::MessageSend {
+                    task_id: task.clone(),
+                    recipient: first.worker_id.clone(),
+                    kind: "work.note".into(),
+                    body: "成员和服务未运行时的持久消息".into(),
+                    reply_to: None,
+                },
+            )
+            .unwrap();
+        queued.push((
+            sent["deliveryId"].as_str().unwrap().to_string(),
+            task.clone(),
+        ));
+    }
+    assert_eq!(f.store.runtime_snapshot().unwrap()["activeRuns"], 0);
+    f.store = Store::open(f.dir.path()).unwrap();
+    f.store.runtime_register("restarted", 456).unwrap();
+    for (delivery, task) in &queued {
+        assert_eq!(
+            fixture_delivery(&f, &first.worker_id, delivery)["status"],
+            "queued"
+        );
+        let run = f
+            .store
+            .runtime_claim("restarted", delivery, &first.configuration_id)
+            .unwrap();
+        assert_eq!(&run.task_id, task);
+        assert_eq!(&run.delivery_id, delivery);
+        f.store.runtime_begin_launch("restarted", &run.id).unwrap();
+        let run = f
+            .store
+            .runtime_child_started("restarted", &run.id, 321, "fixture queued message")
+            .unwrap();
+        let bound = f.store.bind_member("restarted", &run.id).unwrap();
+        let finish = member_operation(
+            &run,
+            "wait",
+            "message_respond",
+            json!({"kind":"wait","reason":"已读当前投递，等待本人补充","handler":f.human}),
+        );
+        assert_eq!(f.store.member_call(&bound, &finish).unwrap()["ok"], true);
+        f.store
+            .runtime_run_observed_stopped("restarted", &run.id, "fixture queued process stopped")
+            .unwrap();
+        let receipt = fixture_delivery(&f, &first.worker_id, delivery);
+        assert_eq!(receipt["status"], "handled");
+        assert_eq!(receipt["runId"], run.id);
+        assert!(
+            f.store
+                .runtime_claim("restarted", delivery, &first.configuration_id)
+                .is_err()
+        );
+    }
+    assert_eq!(f.store.task(&first.task_id).unwrap().runs_used, 4);
+    assert_eq!(f.store.task(&second_task).unwrap().runs_used, 3);
+    assert_eq!(f.store.runtime_snapshot().unwrap()["activeRuns"], 0);
+    let mailbox = f.store.mailbox(Some(&first.worker_id)).unwrap();
+    assert_eq!(mailbox.as_array().unwrap().len(), 7);
+    assert!(
+        mailbox
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|d| d["status"] == "handled")
+    );
+}
+
+#[test]
 fn receipt_write_failure_rolls_back_run_acceptance_and_budget() {
     let mut f = Fixture::new(true);
     let config = f.prepare_digital_leader();
@@ -7069,6 +7216,20 @@ fn rework_reservation_is_atomic_persistent_and_consumed_once_with_bounded_retrie
             "fixture preparation failed before launch",
         )
         .unwrap();
+    let receipt = fixture_delivery(&f, &second.worker_id, &second.delivery_id);
+    assert!(
+        f.store
+            .execute(
+                "retry-accepted-rework",
+                &Command::MailboxRetry {
+                    id: second.delivery_id.clone(),
+                    revision: receipt["revision"].as_u64().unwrap(),
+                    reason: "已受理返工不能重放来绕过返工额度".into(),
+                }
+            )
+            .is_err()
+    );
+    assert_eq!(f.store.task(&first.task_id).unwrap().reworks_used, 1);
     assert!(f.store.execute("stale-reason", &command).is_err());
     let next = Command::TaskRework {
         id: first.task_id.clone(),
@@ -8380,6 +8541,27 @@ fn acceptance_requires_stopped_verifier_and_closes_atomically_with_durable_recor
         f.store
             .execute("late-rejection", &acceptance_decide(&v, &request, false))
             .is_err()
+    );
+    assert!(
+        f.store
+            .execute(
+                "late-message",
+                &Command::MessageSend {
+                    task_id: v.task_id.clone(),
+                    recipient: run.worker_id.clone(),
+                    kind: "work.note".into(),
+                    body: "迟到的消息要求继续工作".into(),
+                    reply_to: None,
+                }
+            )
+            .is_err()
+    );
+    f.store
+        .runtime_run_observed_stopped("service", &run.id, "迟到的原执行停止观测")
+        .unwrap();
+    assert_eq!(
+        f.store.task(&v.task_id).unwrap().revision,
+        v.task_revision + 1
     );
     let reopened = Store::open(f.dir.path()).unwrap();
     assert!(reopened.acceptance_decision(id).unwrap().accepted);

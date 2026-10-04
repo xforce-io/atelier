@@ -52,3 +52,5 @@ CLI 生产资源有创建许可：许可未授予的客户端中断可证明没�
 真实 DeepSeek 报告任务中出现模型正常结束、没有保存消息处理结果的情况。核心保留 blocked；修复后投递及失败/恢复通知明确说明“未记录有效的消息处理结果”，Run 仍保留原始 completed 原因。新增持久化回归覆盖这一区别，不自动补处理结果或重放模型。实证见 `report-intake-result-20261003.json`，该次历史记录保留修复前原文。
 
 S5.A10 补充确定性文件竞态与真实 Docker：文件授权规划后、清单发布前撤权，已发布保留、未发布不进入产出/账本；实际检查容器运行后撤权，资源核对停止前不能释放 Run，最终 inconclusive，旧缓存拒绝，无独立检验。成员为 fixture。见 `revocation_between_file_preparation_and_publication_keeps_only_prior_manifest`、`real_docker_revocation_stops_inflight_check_without_publishing_success` 与 `check-revocation-afaf4173-fb0c-4a57-a4f5-8c2b9433f9b1.json`；154 项 Rust 回归通过，结合已有旧 Run 不复活断言后该条开发证据齐备，整个 S5 未验收。
+
+S5.A12 补充已受理 rework 原样 retry 拒绝与返工计数不变，结合既有承接提交后丢终态、终局仅核对、execute 不重试、旧 epoch 拒绝及原始账本，开发证据齐备。155 项 Rust 回归见 `rust-queue-boundaries-20261004.log`；这不意味着 milkie 原生 API 失败上下文续接问题已修复。

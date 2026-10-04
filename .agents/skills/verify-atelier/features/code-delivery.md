@@ -38,3 +38,5 @@ Grok 负责人已通过真实消息承接并安排 Pi 执行；Pi 在 SDK 启动
 ## 真实成员交付证据（2026-10-03）
 
 候选 `60437b0` 上修复镜像的 Pi 真实读取/修改文件、自测、提交并直接交接，Grok 独立检查 19/19 通过；产出 `4b092657…` 非 partial。详见[实现记录](../../../../docs/implementation/1-first-team-delivery.md)及本地 `fixed-tools-game-result-20261003.json`。此结果补充上述历史缺口；API、Grok 执行职责、完整双入口和宿主退出仍未覆盖，不将整个 S2 标为通过。
+
+S2.A3/A9 补充两任务同成员的七条持久投递：运行中不得抢占；停服时新增消息，数据库与服务重启后各有独立 Run 且处理次数精确，无丢失或重复领取。核心 fixture `queued_messages_across_tasks_survive_restart_and_never_preempt_active_run` 与既有并发安排去重断言通过；实际多消息处理另见宿主退出和拒收恢复记录。S2.A6 的 API/Pi/Grok 真实产出与接入能力握手、仅授权工具的断言已逐项关联。各条开发证据齐备，完整 S2 未签署。

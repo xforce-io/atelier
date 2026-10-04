@@ -701,3 +701,11 @@ L1 v0.10 / L2 v0.22 不变，仅补 Integration。文件工具通过授权规划
 另使用冻结的延迟检查配置和真实 Docker，在核对容器运行及 Run 归属后撤权。活动检查未停止前不能释放 Run；停止后检查为 inconclusive、resources_stopped=true，不能重放旧缓存，不产生独立检验或当前产出。成员为 fixture；此项证明核心和实际检查资源边界，不冒充真实模型验收。两次初始运行因默认临时目录下容器创建/隔离前置失败；改用已有 Docker 测试的仓库内临时目录后通过，产品代码与断言没有放宽。
 
 证据 `check-revocation-afaf4173-fb0c-4a57-a4f5-8c2b9433f9b1.json`、`rust-revocation-20261004.log`、`clippy-revocation-20261004.log`。154 项 Rust（14 Unit、19 CLI、121 core）、格式与 Clippy 通过；12 项环境测试默认 ignored，其中新增 Docker 撤权测试已显式通过。与已有恢复权限不复活旧 Run、停止后仅保留 partial 的断言合并，S5.A10 开发证据齐备，累计 30/58；全量验收、独立评审及合入仍未完成。
+
+## 2026-10-04：持久队列、已受理返工与关闭后的迟到消息
+
+撤权候选 `7bf204c` 的 [CI 37187398574](https://github.com/xforce-io/atelier/actions/runs/37187398574) 通过。随后逐条核对既有断言和真实模型记录，补齐 S6.A1 固定输入排除未提交/未跟踪文件及缺环境保存、S4.A5 撤销验收权与数字员工冒名拒绝、S2.A6 三种实际接入产出与能力握手前置拒绝。计数依据为具体分支，不是测试名称或总数。
+
+新增 `queued_messages_across_tasks_survive_restart_and_never_preempt_active_run`：两个任务向同一成员投递，原 Run 活动时所有后续领取都拒绝，收件箱与原 Run 不变；服务与成员停止期间再接收两条消息，重开数据库及服务后处理所有七条投递，每条关联独立 Run，两个任务分别消耗 4/3 Run，重复领取拒绝且无丢失。补充已受理 rework 的原样 retry 被拒、额度仍为 1；验收关闭后迟到普通消息被拒，原 Run 的重复停止观测不改变任务修订与正式决定。均为明确的核心故障/资源 fixture，不冒充模型运行。
+
+155 项 Rust（14 Unit、19 CLI、122 core）、格式与 Clippy 通过，12 项环境测试默认 ignored；日志为 `rust-queue-boundaries-20261004.log`、`clippy-queue-boundaries-20261004.log`。结合实际宿主返回、首次人类接受及真实成员操作记录，补齐 S2.A3/A9、S4.A8、S5.A12 的开发证据；审计累计 37/58。原 API 失败上下文的上游问题仍保留，未用确定性重试测试宣称它已修复；全量验收与独立评审未完成。
