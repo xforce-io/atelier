@@ -27,3 +27,6 @@ CLI 和产品 Atelier Skill 分别验证；需要真实成员的路径不可用 
 
 
 2026-10-04：实际 Pi Skill 在无 Git/Docker 的专用环境提交三个报告任务后退出，业务交由 DeepSeek 处理。API 随后 MODEL_BAD_RESPONSE，重测 HTTP 402；三类决定未齐，S6.A2 保持未通过。原任务/失败/本人恢复事项保留且服务停止，详见 skill-report-provider-failure-20261004.json。
+
+
+2026-10-04：用户充值后原连接检查通过；实际 Pi Skill 从原待办恢复三个原 Task，仍以原上下文续接，但均触发空 assistant 消息 HTTP400（milkie #273）。全部资源停止、原记录保留，S6.A2 仍未通过，见 skill-report-funded-recovery-20261004.json。

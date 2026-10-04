@@ -2,7 +2,7 @@
 
 日期：2026-10-04。模式：end-to-end；当前阶段：implementation / verify；状态：进行中，未完成全量验收、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结最终验收候选。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
 
-当前依据为 L1 v0.10 / L2 v0.23，检查点 `90d93de` 的 CI 已通过（157 项 Rust、58 项 TypeScript、格式与 Clippy）。最新消息权限测试后本地 158 项 Rust、格式与 Clippy 通过；13 项环境测试默认 ignored。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **46 项齐备、12 项仍待补分支或核对**，不代表 Story 全量通过。最新报告 Skill 运行遭遇 API 失败，连接重测 HTTP 402，另保留 milkie #273；详见末节。
+当前依据为 L1 v0.10 / L2 v0.23，检查点 `0d93df9` 的 CI 已通过（158 项 Rust、58 项 TypeScript、格式与 Clippy；13 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **47 项齐备、11 项仍待补分支或核对**，不代表 Story 全量通过。最新报告任务的 HTTP 402 已在用户充值后恢复；原上下文续接仍触发 milkie #273 的空 assistant 消息 HTTP 400，详见末节。
 
 以下保留各阶段历史检查点，其中“未实现”“未验证”和测试数量均属于对应阶段；当前状态以最新日期记录为准。
 
@@ -761,3 +761,14 @@ L1 reuse v0.10、L2 reuse v0.23；仅补测试与证据，产品行为不变。�
 实际运行未完成三类承接结果：第一个 Run 先保存 wait，又试图补充契约和 accept，被核心拒绝“该投递已保存处理结果”；随后三个 API Run 均以 MODEL_BAD_RESPONSE 停止。再次真实 connection test 得到 provider_rejected / HTTP 402。保留三个原 Task/上下文和全部错误；两个未有效处理的投递 blocked，保存本人 recovery，前一个已保存的 wait 仍 handled。服务已显式停止，activeRuns=0，3条本人待办/结果保留；没有自动重试或改写原 checkpoint。
 
 证据 `skill-report-provider-failure-20261004.json`、`skill-report-observations-20261004.jsonl` 保存具名宿主/Skill摘要/调用、初始检查、原生失败与重测；私人会话和凭据仍不提交。S6.A2 保持未通过。HTTP 402 是本轮连接障碍，不能与 milkie #273 的失败上下文续接缺陷混为一个问题；已询问用户恢复连接或指定另一条已配置 API，独立验证继续推进。
+
+
+## 2026-10-04：充值后恢复原任务，确认失败会话续接缺陷
+
+`0d93df9` 的 [CI 37190405045](https://github.com/xforce-io/atelier/actions/runs/37190405045) 成功，158 项 Rust、58 项 TypeScript、格式与 Clippy 通过。用户明确说明 DeepSeek 已充值后，相同连接和凭据代次再次 connection test 成功，HTTP 402 障碍已解除。
+
+实际 Pi Skill 宿主重新进入原报告工作区，40 次工具调用完成事实查询、两个 recovery 的正式 retry/apply，以及对已有有效 wait 的任务发送普通问题；随后启动服务并退出，PID 72174 已不存在。三个只读命令参数错误保留，宿主查 help 后纠正，未改配置或代成员承接。三个原 Task ID、原成员及原上下文全部保留。
+
+恢复后的三次 Run 均 resume=true，却再次 MODEL_BAD_RESPONSE；无新增业务工具操作。对原始失败 checkpoint 的内存副本作无业务副作用诊断，提供商明确返回 `400 Invalid assistant message: content or tool_calls must be set`，与 milkie #273 一致。诊断中的合成结束只终止诊断，不代表业务恢复成功；未改原始 checkpoint、未重置 Task，也未本地修改 milkie。全部六次新旧 Run 已核对停止，服务 stopped/activeRuns=0，四条人类结果或待办保留。证据 `skill-report-funded-recovery-20261004.json`、`report-funded-resume-diagnostic-20261004.jsonl`；S6.A2 仍未通过，上游 issue 已补此复现场景。
+
+另逐条核对此前真实 DeepSeek 游戏的启动前 Keychain 连接恢复：唯一 recovery `3b187ac2…` 经正式 retry/apply 后，原投递由原数字负责人处理为 handled，后续实际交付到人类待办；原主体、投递、正式请求及成功 Run 可查。结合实际 Pi Skill 的等待/失败落实/取消和核心撤权唯一通知、不自动扩权断言，S5.A13 开发证据齐备，累计47/58。证据 `leader-connection-recovery-audit-20261004.json`；它只证明启动前连接恢复，原生失败 checkpoint 恢复仍为 false，两者不混用。

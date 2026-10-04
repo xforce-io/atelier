@@ -59,3 +59,6 @@ S5.A11 实际 Pi/Grok 无产出阻塞演练已完成：首执行 Run 查询空�
 
 
 2026-10-04：S5.A4/A9 本轮补齐实际 Keychain/CLI/Node 服务崩溃和核对，以及文本/JSON 的长输入、空列表、失败、缺参输出。未知资源由实际 reconcile 与核心断言单独证明，不用 not_found 代替。证据 keychain-runtime-20261004.log、cli-output-protocol-20261004.json；原 API 失败 checkpoint 问题仍保留，完整 S5 未验收。
+
+
+2026-10-04：S5.A13 的原连接前置恢复已逐条核对真实请求、唯一待办、原负责人和原投递处理成功；结合实际 Skill 等待/失败落实/取消与撤权断言，开发证据齐备。证据 leader-connection-recovery-audit-20261004.json。这不代表 API 失败 checkpoint 恢复：最新充值后原会话仍复现 milkie #273。
