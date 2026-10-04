@@ -65,3 +65,6 @@ S5.A11 实际 Pi/Grok 无产出阻塞演练已完成：首执行 Run 查询空�
 
 
 2026-10-04：S5.A1 补齐：当前实际CLI查询接入缺配置、原生运行错误、上下文预算不足，原因/责任/投递/partial产出保留，无假成功；新服务处理其它任务时旧失败记录完全不变。Run/消息额度耗尽另由核心注入测试覆盖。证据 failure-preservation-audit-20261004.json；失败可见性不等同milkie #273失败checkpoint恢复。
+
+
+2026-10-04：S5.A2补齐CLI和实际Skill的取消入口。两条活动路径观察真实Node running/PID存活→请求取消pending→资源停止→Task closed/cancelled；未领取消息无Run且cancelled。两条独立故障副本注入unknown+缺PID后取消并重复核对，仍blocked_unknown/activeRuns=1、Task未闭合。新Run门禁与迟到结果边界由当前Integration补充。证据 skill-active-cancel-result-20261004.json、direct-active-cancel-result-20261004.json、skill-unknown-cancel-result-20261004.json、direct-unknown-cancel-result-20261004.json；真实组件、受控端点和副本注入分开标注。端点已停止，合成凭据已清除。

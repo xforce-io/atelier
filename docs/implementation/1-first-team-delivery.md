@@ -2,7 +2,7 @@
 
 日期：2026-10-04。模式：end-to-end；当前阶段：implementation / verify；状态：进行中，未完成全量验收、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结最终验收候选。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
 
-当前依据为 L1 v0.10 / L2 v0.23，检查点 `8efff33` 的 CI 已通过（158 项 Rust、58 项 TypeScript、格式与 Clippy；13 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **53 项齐备、5 项仍待补分支或核对**，不代表 Story 全量通过。最新报告任务的 HTTP 402 已在用户充值后恢复；原上下文续接仍触发 milkie #273 的空 assistant 消息 HTTP 400，详见末节。
+当前依据为 L1 v0.10 / L2 v0.23，检查点 `47fee60` 的 CI 已通过（158 项 Rust、58 项 TypeScript、格式与 Clippy；13 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **54 项齐备、4 项仍待补分支或核对**，不代表 Story 全量通过。最新报告任务的 HTTP 402 已在用户充值后恢复；原上下文续接仍触发 milkie #273 的空 assistant 消息 HTTP 400，详见末节。
 
 以下保留各阶段历史检查点，其中“未实现”“未验证”和测试数量均属于对应阶段；当前状态以最新日期记录为准。
 
@@ -805,3 +805,14 @@ Pi 初轮只固定原始基线，产出 `d0a72a00…` 的文件与预先固定�
 证据 `invalid-acceptance-skill-result-20261004.json`，实际宿主PID 94281、22次工具调用、exit 0。宿主另有三次 acceptance show 误传Task ID，不能用这些失败查询推断无记录；审计改用正确请求ID及只读SQL确认零记录，原错误保留。CLI帮助与describe现注明该接口读取请求ID对应的已保存验收记录，待决定事项改查task decision；只澄清现有接口语义。
 
 S4.A4开发证据齐备，逐项为53/58，剩余 S6.A2、S4.A2/A3/A7、S5.A2。此处为明确注入的负向测试，不代表真实人类接受/拒绝或真实检验故障，不替代S4.A2/A7。正常代码检查点 `8efff33` 的 [CI 37191840452](https://github.com/xforce-io/atelier/actions/runs/37191840452) 已通过；本次帮助澄清已通过构建、格式检查、4项Skill相关回归及实际help/describe查询，证据 `skill-help-regression-20261004.log`、`acceptance-help-described-20261004.json`。完整验收、独立审查、PR与合入均未完成。
+
+
+## 2026-10-04：活动执行取消与未知资源保留
+
+沿用 L1 v0.10 / L2 v0.23。独立测试工作区使用合成凭据与本机受控TCP端点，该端点有意等待TLS握手、不执行模型推理。实际Pi Skill（21次工具调用，PID 99482，以0退出）启动生产运行服务，在真实Node进程running且PID存活时请求取消Task；0.1秒观察序列记录请求后Task仍pending、Run仍running，进程停止后才closed/cancelled。直接CLI另以新任务走相同路径，取消响应也为pending，确认资源停止后才闭合。两个任务各仅1个Run，尚未领取的第二条消息cancelled且无Run。生产服务均已停止、activeRuns=0；端点已停止，合成Keychain凭据已清除。
+
+无法确认停止另用两个独立副本显式注入：从已停止的测试数据恢复取消前记录，设置unknown+缺PID+接入未确认停止，没有复制存活进程。CLI和实际Pi Skill（16次工具调用，PID 2599，以0退出）分别请求取消并重复两次runtime reconcile；均保留blocked_unknown/activeRuns=1，Task未closed且无outcome，Run仍unknown、运行计数不变。重复检查没有假报停止。未知占位拒绝新Run、迟到结果不能终局、取消不发布正式产出等边界由当前核心Integration补充；副本故障不称为真实未知资源已停止。
+
+证据 `skill-active-cancel-result-20261004.json`、`active-cancel-observations-20261004.jsonl`、`direct-active-cancel-result-20261004.json`、`skill-unknown-cancel-result-20261004.json`、`direct-unknown-cancel-result-20261004.json`、`cancel-fixture-cleanup-20261004.json`。原始观察程序启动时误读尚未创建的runtime行，已修正空状态处理；没有重启宿主或任务。副本设置脚本也已修正对tasks冗余revision列的误设，失败事务未提交，最终副本注入单独标明。
+
+S5.A2开发证据齐备，逐项为54/58。剩余 S6.A2、S4.A2/A3/A7。当前代码检查点 `47fee60` 的 [CI 37192223530](https://github.com/xforce-io/atelier/actions/runs/37192223530) 成功；本轮仅驾驶与文档核对，未改产品代码，不重复全量测试。真实人类拒绝后新版验收、过期交付交互及milkie #273原失败上下文恢复仍需完成，独立审查、PR与合入未进行。
