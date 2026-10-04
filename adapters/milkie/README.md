@@ -4,7 +4,7 @@
 
 ## 固定依赖
 
-使用 milkie 修复提交 `da7767790bcb38e30aa49910ad05fba3670689ca`（`feat/273-empty-assistant-resume`，尚未合入主分支）。本次增加失败 checkpoint 续接的空 assistant 请求投影修复，checkpoint 格式与有效历史不变。该提交已有 AgentRuntime 内置工具白名单、稳定 toolCallId、Run 控制和原生 checkpoint。NPM 的 `@freemanxu/milkie@0.1.1` 包早于这些能力，不能以相同版本号当作兼容版本。
+使用 milkie 修复提交 `da7767790bcb38e30aa49910ad05fba3670689ca`（已通过 [milkie PR #274](https://github.com/xforce-io/milkie/pull/274) 合入主分支，固定的是其变更提交）。本次增加失败 checkpoint 续接的空 assistant 请求投影修复，checkpoint 格式与有效历史不变。该提交已有 AgentRuntime 内置工具白名单、稳定 toolCallId、Run 控制和原生 checkpoint。NPM 的 `@freemanxu/milkie@0.1.1` 包早于这些能力，不能以相同版本号当作兼容版本。
 
 准备一个包含该提交的 milkie Git 仓库，在本目录运行：
 

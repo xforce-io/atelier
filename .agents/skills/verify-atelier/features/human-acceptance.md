@@ -48,3 +48,6 @@ S4.A5 的撤权、数字负责人尝试 acceptance_decide、成员伪造 actor/�
 
 
 2026-10-04：用户明确接受Skill当前返工版c5505e60…，实际Pi Skill以18次调用零错误提交新请求dc3d7df3…；独立查询确认accepted/revision2、Task closed/accepted/revision4，旧4d39c2f9…rejected和原因保留、全部12Run停止。本次新版接受结合真实未决定/拒绝/旧版人类决定不沿用的实际宿主记录，S4.A7开发证据齐备，来源skill-human-decision-coverage-20261004.json。旧版决定过期与core superseded fixture分开说明，合成负向accept不计真实接受。CLI新版9153baee…第二次真实拒绝已保存，负责人处理新拒绝消息仍因milkie #273受阻，S4.A2两入口闭合尚未完成。
+
+
+2026-10-04：CLI第二次真实拒绝后，固定milkie修复da77677恢复原投递，数字团队在原额度内发布24a35b2f、独立19/19及新请求0208ffae；README两局另经逐步复算。当前请求open，仍须本人新决定，S4.A2尚未齐备。见milkie-273-cli-reworked-result.json。

@@ -30,3 +30,6 @@ CLI 和产品 Atelier Skill 分别验证；需要真实成员的路径不可用 
 
 
 2026-10-04：用户充值后原连接检查通过；实际 Pi Skill 从原待办恢复三个原 Task，仍以原上下文续接，但均触发空 assistant 消息 HTTP400（milkie #273）。全部资源停止、原记录保留，S6.A2 仍未通过，见 skill-report-funded-recovery-20261004.json。
+
+
+2026-10-04：固定milkie修复da77677后，实际Pi Skill恢复原三个报告Task，DeepSeek在原上下文分别保存承接/等待/拒绝，原操作账本不变、资源停止；S6.A2开发证据齐备，见milkie-273-report-resumed-result.json。未交付报告或代本人验收。

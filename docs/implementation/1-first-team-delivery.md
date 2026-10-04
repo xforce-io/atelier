@@ -880,3 +880,18 @@ CLI请求42ceec28…已rejected/revision2、本人请求投递handled，Task e57
 沿用 L1 v0.10，L2 v0.25。用户提供的 milkie #273 三文件修复已核对、提交并推送为 `da7767790bcb38e30aa49910ad05fba3670689ca`（`feat/273-empty-assistant-resume`，尚未合入主分支）。仅请求投影省略空 assistant，失败 checkpoint、用户输入、有效回复与历史工具效果保留；无关未跟踪实验未提交、未打入依赖包。上游聚焦31项通过，src全量1106项通过、两项旧火山真实服务smoke失败单独保留；真实DeepSeek预算拒绝后原checkpoint续接完成、add调用1次、无空assistant。
 
 Atelier通过固定提交Git archive构建更新依赖、锁文件、通道握手与CI来源；59项TypeScript与159项Rust通过，13项环境测试默认ignored，格式和Clippy通过。连接诊断须按新接入提交重测，原任务、执行配置、凭据代次及额度不重置。CLI优先恢复当前第二次人类拒绝对应投递，保留旧失败反馈；原三个报告任务由实际产品Skill恢复。此处仅记录接入检查，尚未把原上下文业务恢复、人类新版验收或全量Story标为通过；当前逐项开发证据仍56/58，S6.A2与S4.A2待补。证据位于 `.agents/verify-runs/1/milkie-273-*`。
+
+
+## 2026-10-04：原失败上下文恢复完成，CLI 第二次返工待新版决定
+
+固定依赖候选 `60f9e88d51a262199cd490f9efdfa1109f044fcb` 的 [CI 37202513725](https://github.com/xforce-io/atelier/actions/runs/37202513725) 成功，59项TypeScript、159项Rust、格式及Clippy通过，13项环境测试仍默认ignored。milkie修复已由独立原生Codex（gpt-6.1-sol，bind-file）审查PASS、human: optional；keel check通过后 [PR #274](https://github.com/xforce-io/milkie/pull/274) 合入主分支 `8457b1c000652e9147ea1557979ce8c994692f8a`，Atelier仍固定消费其变更提交da77677。上游没有分支必需CI，仅手动npm发布工作流；本次没有发布npm或线上部署。冻结src运行移除火山环境后，有5项CLI因缺少构造gateway的环境前置失败；恢复原环境后对应16项CLI回归全部通过。未改测试或放宽断言，独立火山live失败未计入本修复成功。
+
+新CLI二进制的Keychain读取返回credential_unavailable；用已授权本地环境变量经保护stdin重新保存相同连接凭据，CLI/报告代次分别为7/2，按新接入提交重新检查均passed。连接版本、Task冻结配置、上下文及额度不改；诊断失败和旧凭据代次历史保留。
+
+实际Pi产品Skill（PID87700，36次调用，exit0后已不存在）读取产品合同、查询原三个报告Task，通过正式retry/apply恢复各自失败投递，启动服务后退出，没有代成员承接、安排或交付验收。前三次只读describe误将--task放在全局，原错误保留，宿主读help后改正。DeepSeek三个新Run均resume=true并沿用原contextId：范围明确的报告补齐契约并承接为active，owner为原团队负责人，缺执行器时保持责任和等待；资料不足的报告保持pending并保存wait；要求跳过独立检验和数字员工代验收的报告closed/declined，关闭后的Run按既定取消规则停止，不能将cancelled说成模型完成。所有9个新旧Run停止、运行服务stopped/activeRuns=0；原4条成员操作账本逐条完全一致。S6.A2开发证据齐备，来源`milkie-273-report-resumed-result.json`。
+
+CLI从最新第二次人类拒绝的原投递f707abb1恢复，原负责人953f4b63自行引用当前拒绝42ceec28安排返工；f44f979f发布新版24a35b2f，a2ed474a交接独立检验，7b0a0591完成19/19，cd2bf907创建新版请求0208ffae（Task修订3、请求修订1）。正好用完原剩余5次Run，20/20 Run与2/2返工额度保持；原任务、角色和上下文保留，没有重试较旧的失败反馈投递。新版README逐步列出获胜1,5,2,6,3，以及平局1,2,6,4,3,5,8,9,7；主宿主独立复算两局正确，与冻结网页19项检查分开取证。所有20个Run停止、运行服务stopped/activeRuns=0；新请求open，尚无当前人类决定。来源`milkie-273-cli-reworked-result.json`和`milkie-273-cli-readme-checked.json`。
+
+真实业务恢复以原上下文、业务状态、处理结果与账本为证，不存储生产原始模型请求正文；“无空assistant”的直接请求形状证明来自真实DeepSeek修复复验及上游回归，不能伪称生产日志记录了完整请求。实际业务恢复与诊断分开。
+
+逐项开发证据为57/58；仅S4.A2剩CLI当前新版真实接受。Skill新版已接受，不再次等待。已向用户展示指定CLI新版README、19/19及新请求，提出新的决定问题；旧Skill决定不沿用。Atelier全量独立审查、PR及合入尚未执行。

@@ -436,7 +436,7 @@ Skill 的工作是帮助成员理解收到的消息并作获准决定；不依�
 
 每个实际启动的 Run 创建独立 TypeScript milkie 接入进程，与 Rust 核心通过私有 JSON Lines 通道通信；进程归属和生命周期见 §3.3。protocolVersion、requestId、Task/Run/Delivery、seq、payload 必需，身份从通道绑定。双向序号独立、重复同内容去重、冲突或缺号拒绝，不解析自然语言推断终态。hello/ready 报告固定版本、transport、Skill 摘要和工具/隔离/续接能力；start 携带消息与上下文；tool.request/result 处理业务操作；progress/report 有界；stop/terminal 只报告实际状态，不自动验收。
 
-API 接入复用 milkie AgentRuntime 的受控工具注册与 I/O 边界，而不依赖尚未具备工具回调能力的统一 ExecutionClient。当前可构建基线固定为修复提交 `da7767790bcb38e30aa49910ad05fba3670689ca`（分支 `feat/273-empty-assistant-resume`，尚未合入主分支）；已发布 NPM 0.1.1 缺内置工具白名单，不能直接替代。构建必须从固定提交的独立快照进行，不把相邻工作区的未提交代码当依赖版本。CLI 仍需证明指定隔离环境、工具限制及原生续接，不能用 API 已可接入推定 CLI 已满足。
+API 接入复用 milkie AgentRuntime 的受控工具注册与 I/O 边界，而不依赖尚未具备工具回调能力的统一 ExecutionClient。当前可构建基线固定为修复提交 `da7767790bcb38e30aa49910ad05fba3670689ca`（已通过 [milkie PR #274](https://github.com/xforce-io/milkie/pull/274) 合入主分支，固定其变更提交）；已发布 NPM 0.1.1 缺内置工具白名单，不能直接替代。构建必须从固定提交的独立快照进行，不把相邻工作区的未提交代码当依赖版本。CLI 仍需证明指定隔离环境、工具限制及原生续接，不能用 API 已可接入推定 CLI 已满足。
 
 API 适配只注册核心本轮装配的工具，关闭所有内置工具与 subagent；使用 milkie 的实际派发校验和稳定 toolCallId，再沿私有通道转交核心。工具请求先持久记录身份与 operationId；失联后停止新模型调用，下一 Run 先核对原请求并提供已核对结果。结果查询仍经过核心当前授权。调用账本仅记录传输事实，不接管任务队列或业务阶段。适配在 100 次工具调用边界停止额外调用，并区分适配停止原因与 milkie 原始终态；两者都不代表消息已处理或任务验收通过。
 
