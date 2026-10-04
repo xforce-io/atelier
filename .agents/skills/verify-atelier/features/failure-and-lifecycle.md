@@ -68,3 +68,6 @@ S5.A11 实际 Pi/Grok 无产出阻塞演练已完成：首执行 Run 查询空�
 
 
 2026-10-04：S5.A2补齐CLI和实际Skill的取消入口。两条活动路径观察真实Node running/PID存活→请求取消pending→资源停止→Task closed/cancelled；未领取消息无Run且cancelled。两条独立故障副本注入unknown+缺PID后取消并重复核对，仍blocked_unknown/activeRuns=1、Task未闭合。新Run门禁与迟到结果边界由当前Integration补充。证据 skill-active-cancel-result-20261004.json、direct-active-cancel-result-20261004.json、skill-unknown-cancel-result-20261004.json、direct-unknown-cancel-result-20261004.json；真实组件、受控端点和副本注入分开标注。端点已停止，合成凭据已清除。
+
+
+2026-10-04：真实API反馈消息恢复时，完整已核对结果使currentTurn估算20223超过原8192区域上限。L2 v0.24将该区域设为32 KiB、总输入保持64 KiB；59项TypeScript回归证明完整结果/稳定操作ID保留与超限失败。原失败记录和checkpoint未改；真实恢复仍待取证，不能据此声称milkie #273修复或S6.A2通过。

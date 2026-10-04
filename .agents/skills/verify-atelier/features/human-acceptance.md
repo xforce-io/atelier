@@ -42,3 +42,6 @@ S4.A5 的撤权、数字负责人尝试 acceptance_decide、成员伪造 actor/�
 2026-10-04：人类团队负责人真实任务3bd9beb5…的当前产出9fca3e47…已独立19/19通过。实际Pi Skill以23次工具调用创建唯一当前验收请求10d3b163…（Task revision 3/request revision 1），导出网页与中文说明并核对摘要；请求open、Task active、四Run停止，没有人类决定。证据 human-leader-acceptance-ready-20261004.json。仅准备实际待办，不新增pass，不将“继续”或浏览器控制交接视为正式验收。
 
 随后用户对当前具体验收问题明确同意接受，主宿主限定解释为接受这次交付，并由实际Pi Skill重新核对版本和独立检验后提交一次accept。请求10d3b163…accepted/revision2、Task3bd9beb5…closed/accepted/revision4；正式记录绑定原Task revision3、产出9fca3e47…、独立检验61ddf400…和本人，四Run停止、本任务无待处理投递。证据 human-leader-user-acceptance-20261004.json。本次接受不补齐S4.A2/A7的真实拒绝后新版接受和过期决定，55/58计数不变。
+
+
+2026-10-04：实际人类已拒绝 CLI cd9e8c84… 与 Skill 4d39c2f9… 两份旧交付，真实数字团队各自返工并重新独立19/19通过、建立新请求。实际Pi Skill区分旧拒绝与新版待决定，并确认合成旧请求accept负向检查conflict；直接CLI同样拒绝旧请求。Skill新版README两局已逐步核对正确；CLI新版声称平局实际X获胜，已反馈，不能作为满足修改要求或已验收。两新版尚无真实当前决定，S4.A2/A7不标pass。证据 human-rejection-rework-progress-20261004.json。

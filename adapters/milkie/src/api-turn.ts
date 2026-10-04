@@ -114,7 +114,10 @@ export async function executeApiTurn(turn: ApiTurn): Promise<{ result: AgentResu
         // Include bounded file/tool exchanges as well as the complete catalogue;
         // the UTF-8-byte estimator charges Chinese text conservatively. Required
         // content still fails closed at these finite region and total limits.
-        contextBudget:{maxInputTokens:65536,regionCaps:{control:24576,currentTurn:8192,scratchpad:32768}},
+        // Recovery input also carries complete reconciled core results. Give
+        // it the same finite allowance as live tool exchanges; both remain
+        // subject to the unchanged total request budget.
+        contextBudget:{maxInputTokens:65536,regionCaps:{control:24576,currentTurn:32768,scratchpad:32768}},
         fsm:{states:[{name:'work',type:'llm',tools:names,max_iterations:50}],max_tool_calls:100},
       },
       goal:turn.goal,input,contextId:turn.contextId,agentRunId:turn.runId,

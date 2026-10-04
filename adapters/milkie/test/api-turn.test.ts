@@ -99,6 +99,43 @@ test('journal rejects changed payload for stable call, treats new-run call as ne
   } finally {await rm(directory,{recursive:true,force:true});}
 });
 
+test('recovery retains a bounded task result intact and still rejects oversized current input before the model',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'atelier-api-recovery-budget-'));
+  try {
+    const taskResult={ok:true,data:{deliveries:Array.from({length:80},(_,index)=>({id:`delivery-${index}`,status:'handled',reason:'已核对资源停止，原操作结果保留。'.repeat(4)}))}};
+    const bytes=Buffer.byteLength(JSON.stringify(taskResult),'utf8');
+    assert.ok(bytes>8192 && bytes<32768);
+    const received:string[]=[];
+    const forward=async(operation:ToolOperation)=>{received.push(operation.operationId);return taskResult;};
+    const first=options(directory,new Gateway([call('query','task_read',{}),done()]),forward);
+    first.tools=[{name:'task_read',description:'查询当前绑定任务',inputSchema:{type:'object',additionalProperties:false}}];
+    await executeApiTurn(first);
+    const saved=(await first.eventStore.readByRunId('run-one')).filter(event=>event.type==='agent.checkpoint').at(-1);
+    assert.ok(saved);
+    const gateway=new Gateway([done()]);
+    const next=options(directory,gateway,forward);next.runId='run-two';
+    next.checkpoint=(saved.payload as {checkpoint:import('@freemanxu/milkie').AgentCheckpoint}).checkpoint;
+    const result=await executeApiTurn(next);
+    assert.equal(result.result.status,'completed');
+    assert.equal(result.recoveredOperations,1);
+    assert.equal(gateway.requests.length,1);
+    assert.equal(received.length,2);assert.equal(received[0],received[1]);
+    const messages=gateway.requests[0]!.messages.flatMap(message=>message.content);
+    const input=messages.find(block=>block.type==='text' && block.text.includes('reconciledOperations'));
+    assert.ok(input?.type==='text');
+    const recovery=JSON.parse(input.text.slice(input.text.indexOf('{"workMessage"')));
+    assert.deepEqual(recovery.reconciledOperations[0].result,taskResult,'complete reconciled result reaches the model');
+
+    const oversized=new Gateway([]);
+    const retry=options(directory,oversized,async()=>({ok:true,data:{content:'x'.repeat(40000)}}));
+    retry.runId='run-three';
+    const rejected=await executeApiTurn(retry);
+    assert.equal(rejected.stopCode,'CONTEXT_BUDGET_REQUIRED_REGION_EXCEEDED');
+    assert.equal(rejected.result.status,'error');
+    assert.equal(oversized.requests.length,0);
+  } finally {await rm(directory,{recursive:true,force:true});}
+});
+
 test('cancellation reaches the real milkie runtime and prevents any model call',async()=>{
   const directory=await mkdtemp(join(tmpdir(),'atelier-api-'));
   try {

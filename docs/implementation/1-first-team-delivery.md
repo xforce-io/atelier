@@ -844,3 +844,16 @@ S4.A3沿实际产出发布路径补证。正常契约不允许open验收期间�
 独立查询确认请求accepted/revision=2、Task `3bd9beb5…` closed/outcome=accepted/revision=4，正式验收记录引用原任务修订3、当前产出、独立检验 `61ddf400…` 和冻结本人；人类投递handled且无Run，本任务无queued/blocked投递。四次既有Run仍stopped、返工次数1，服务保持stopped/activeRuns=0。实际宿主15次工具调用，提交前验收记录和请求账本各一次预期not_found；提交成功后查询均一致。宿主PID 37061正常退出且已不存在。
 
 证据 `human-leader-user-acceptance-20261004.json` 保留当前人类决定来源、Skill摘要与具名模型、调用/请求账本及接受记录。当前游戏的真实交付闭环完成；55/58开发证据计数保持，S4.A2/A7仍缺真实拒绝后新版接受和过期人类决定分支，S6.A2仍缺milkie #273修复后的原上下文恢复。本次同意不扩为其它交付、浏览器控制或整个项目验收；独立审查与合入尚未执行。
+
+
+## 2026-10-04：真实人类拒绝、两团队返工及恢复输入边界
+
+用户针对 CLI 请求 `cd9e8c84…` / 产出 `db7ab0f3…` 和 Skill 请求 `4d39c2f9…` / 产出 `245ebf97…` 明确拒绝，要求中文说明增加一局获胜、一局平局的具体落子示例，再独立检验并提交新版。直接 CLI 与实际 Pi 产品 Skill 分别保存正式拒绝；两条旧请求 rejected/revision2，对应本人投递 handled，任务仍 active/revision3。数字团队负责人读取 decision.result 后各自安排返工，宿主没有代安排或修改候选。
+
+DeepSeek 执行产生 `9153baee…`，独立冻结检查19/19通过并创建新请求 `42ceec28…`；Grok 执行/Pi 独立检验产生 `c5505e60…`，19/19通过并创建新请求 `dc3d7df3…`。原生首个检验 Run 的 process_failed 与后续重新送检记录均保留，不将失败改为成功。两个新版 index.html 与各自旧版相同，README 摘要改变。主宿主逐步复算说明：Skill 新版获胜和平局序列正确；CLI 新版声称的平局在第9步令 X 占据中间一列，实际获胜。冻结19项网页检查不覆盖 README 语义，不能用它证明说明正确。已发送普通工作反馈；两新版尚无人类正式决定。
+
+实际 Pi Skill 另以23次工具调用查询新旧依据，明确旧拒绝不适用于新版，保留新版 open/revision1、Task active/revision3；一次明确合成的旧请求 accept 负向检查返回 conflict，旧请求仍 rejected。直接 CLI 的同类负向检查也拒绝。合成负向调用不表示真实人类接受。证据 `human-rejection-rework-progress-20261004.json`、`cli-rejected-request-negative-20261004.json` 与两条实际服务观察序列。
+
+DeepSeek 负责人读取反馈后未保存有效处理结果；正式恢复原投递时，已核对的四个只读操作结果进入当前输入，UTF-8保守估算20223，超过原8192区域上限，模型调用前返回 CONTEXT_BUDGET_REQUIRED_REGION_EXCEEDED。沿 L1 v0.10 修订 L2 v0.24，将恢复输入区域调整为与轮内工具交换一致的32 KiB，总输入仍64 KiB；不裁剪结果、删除权限指导、修改原 checkpoint 或重置任务。新增真实 milkie runtime 回归证明旧限制失败、新限制完整恢复相同操作ID与结果，并证明超限仍在模型调用前失败；59项TypeScript通过，证据 `api-recovery-budget-old-limit-20261004.log`、`api-recovery-budget-regression-20261004.log`。此处修复的是 Atelier 接入预算，不是 milkie #273。
+
+本节写入时两工作区服务均 stopped/activeRuns=0，失败投递与新验收待办保留。修复后的真实原上下文恢复尚待继续取证；55/58计数不变，S4.A2/A7仍需当前人类决定和完整闭合分支，S6.A2仍等待milkie #273修复。未进入独立审查、PR或合入。
