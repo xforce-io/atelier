@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, mkdir, chmod, symlink, rm, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, chmod, symlink, rm, readFile, readdir, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -29,6 +29,103 @@ async function fixture() {
   return { root, options, operations, controller, cleanup: () => rm(root, { recursive: true, force: true }) };
 }
 const call = { name: 'message_send', input: { kind: 'work.note', body: '收到' } };
+
+function boundedResult(bytes: number, character = 'x') {
+  const overhead = Buffer.byteLength(JSON.stringify({ok:true,content:''}));
+  const content = character.repeat(Math.floor((bytes-overhead)/Buffer.byteLength(character)));
+  return {ok:true,content};
+}
+
+test('CLI rejects missing model-iteration capability before creating a journal or native Run',async()=>{
+  const f=await fixture();
+  try {
+    const capabilities=f.options.execution.capabilities();
+    f.options.execution.capabilities=()=>({...capabilities,modelIterations:false});
+    await assert.rejects(executeCliTurn(f.options),/cli_capabilities_missing/);
+    assert.deepEqual(await readdir(join(f.root,'journal')),[]);assert.equal(f.operations.length,0);
+    await assert.rejects(readFile(join(f.root,'cwd','last-args.json')),/ENOENT/);
+  }finally{await f.cleanup();}
+});
+
+test('SDK iteration exhaustion maps to budget_exhausted and the next Run retains its session',async()=>{
+  const f=await fixture();
+  try {
+    const exhausted=await executeCliTurn({...f.options,input:JSON.stringify({iterationLoop:true})});
+    assert.equal(exhausted.stopReason,'budget_exhausted');assert.equal(exhausted.stopCode,'iteration_budget_exhausted');
+    assert.deepEqual(JSON.parse(await readFile(join(f.root,'cwd','fixture-iterations.json'),'utf8')),{limit:50,requests:50});
+    assert.equal(f.operations.length,0);
+    const session=f.options.execution.getContext(f.options.nativeContextId).nativeSessionId;
+    assert.equal((await executeCliTurn({...f.options,scope:{...f.options.scope,runId:'after-iteration-budget'}})).stopReason,'completed');
+    assert.equal(f.options.execution.getContext(f.options.nativeContextId).nativeSessionId,session);
+  }finally{await f.cleanup();}
+});
+
+test('CLI delivers legal 80 KiB and maximum UTF-8 results through the fixed SDK',async()=>{
+  const f=await fixture();
+  try {
+    const effects=new Map<string,ReturnType<typeof boundedResult>>();
+    for(const [index,value] of [boundedResult(80*1024),boundedResult(256*1024),boundedResult(256*1024,'中')].entries()) {
+      f.options.forward=async operation=>{f.operations.push(operation);if(!effects.has(operation.operationId))effects.set(operation.operationId,value);return effects.get(operation.operationId);};
+      const terminal=await executeCliTurn({...f.options,scope:{...f.options.scope,runId:`large-${index}`},input:JSON.stringify({calls:[call]})});
+      assert.equal(terminal.stopReason,'completed');
+      const replies=JSON.parse(await readFile(join(f.root,'cwd','last-results.json'),'utf8'));
+      assert.equal(replies[0].ok,true);assert.deepEqual(JSON.parse(replies[0].output),value);
+      const calls=await readdir(join(f.root,'data','calls'));
+      const records=await Promise.all(calls.filter(name=>name.endsWith('.json')).map(async name=>JSON.parse(await readFile(join(f.root,'data','calls',name),'utf8'))));
+      assert.ok(records.some(record=>record.status==='succeeded'&&record.output&&JSON.stringify(JSON.parse(record.output))===replies[0].output));
+      const runs=await readdir(join(f.root,'data','runs'));
+      const recordsRun=await Promise.all(runs.filter(name=>/^[a-f0-9-]+\.json$/.test(name)).map(async name=>JSON.parse(await readFile(join(f.root,'data','runs',name),'utf8'))));
+      assert.ok(recordsRun.every(record=>record.iterationBudget?.limit===50&&record.stopped));
+    }
+    assert.equal(effects.size,3);assert.equal(new Set(f.operations.map(operation=>operation.operationId)).size,3);
+  }finally{await f.cleanup();}
+});
+
+test('a full-size lost result reconciles without adding metadata to the SDK output limit',async()=>{
+  const f=await fixture();
+  try {
+    const value=boundedResult(256*1024);assert.equal(Buffer.byteLength(JSON.stringify(value)),256*1024);
+    const effects=new Map<string,unknown>();let lost=true;
+    f.options.forward=async operation=>{
+      f.operations.push(operation);effects.set(operation.operationId,value);
+      if(lost){lost=false;throw new Error('lost full-size reply');}return effects.get(operation.operationId);
+    };
+    await assert.rejects(executeCliTurn({...f.options,input:JSON.stringify({calls:[call]})}),/tool_result_uncertain/);
+    const pending=f.options.execution.pendingToolCalls(f.options.nativeContextId);assert.equal(pending.length,1);
+    const session=f.options.execution.getContext(f.options.nativeContextId).nativeSessionId;
+    const terminal=await executeCliTurn({...f.options,scope:{...f.options.scope,runId:'full-recovery'}});
+    assert.equal(terminal.stopReason,'completed');assert.equal(terminal.recoveredOperations,1);assert.equal(effects.size,1);
+    const sdk=f.options.execution.toolCall(pending[0]!.callId)!;assert.equal(sdk.status,'reconciled');assert.deepEqual(JSON.parse(sdk.output!),value);assert.equal(Buffer.byteLength(sdk.output!),256*1024);
+    assert.equal(f.options.execution.getContext(f.options.nativeContextId).nativeSessionId,session);
+    const prompt=JSON.parse(await readFile(join(f.root,'cwd','last-prompt.json'),'utf8'));
+    assert.deepEqual(prompt.reconciledOperations[0].result,value);
+    assert.equal(prompt.reconciledCalls[0].operationId,prompt.reconciledOperations[0].operationId);
+    assert.equal(prompt.reconciledCalls[0].output,undefined);
+    assert.equal((await executeCliTurn({...f.options,scope:{...f.options.scope,runId:'full-recovery-again'}})).stopReason,'completed');
+    assert.equal(effects.size,1);
+  }finally{await f.cleanup();}
+});
+
+test('multiple full results reopen a recovery journal larger than 1 MiB without duplicate effects',async()=>{
+  const f=await fixture();
+  try {
+    const value=boundedResult(256*1024);const effects=new Map<string,unknown>();
+    f.options.forward=async operation=>{if(!effects.has(operation.operationId))effects.set(operation.operationId,value);return effects.get(operation.operationId);};
+    await executeCliTurn({...f.options,input:JSON.stringify({calls:[call,call]})});
+    assert.equal(effects.size,2);
+    // Inject lost SDK publication after core/host journal completion; processes are stopped.
+    for(const name of await readdir(join(f.root,'data','calls'))) {
+      if(!name.endsWith('.json'))continue;
+      const path=join(f.root,'data','calls',name);const record=JSON.parse(await readFile(path,'utf8'));
+      assert.equal(record.status,'succeeded');record.status='pending';delete record.output;await writeFile(path,JSON.stringify(record));
+    }
+    const next=await executeCliTurn({...f.options,scope:{...f.options.scope,runId:'two-large-recovery'}});
+    assert.equal(next.stopReason,'completed');assert.equal(next.recoveredOperations,2);
+    assert.ok((await stat(join(f.root,'journal','delivery.recovery.json'))).size>1024*1024);
+    assert.equal((await executeCliTurn({...f.options,scope:{...f.options.scope,runId:'two-large-reopen'}})).stopReason,'completed');
+    assert.equal(effects.size,2);assert.equal(f.options.execution.pendingToolCalls(f.options.nativeContextId).length,0);
+  }finally{await f.cleanup();}
+});
 
 test('real SDK maps read_file to a non-native tool and reconciles canonical calls after revocation', async () => {
   const f = await fixture();

@@ -27,10 +27,21 @@ process.stdin.on('end', async () => {
     fs.writeFileSync('last-prompt.json', JSON.stringify(prompt));
     fs.writeFileSync('last-args.json', JSON.stringify(args));
     emit(session);
+    if(request.iterationLoop) {
+      const extension=fs.readFileSync(arg('--extension'),'utf8');
+      const limit=Number(extension.match(/"maxModelIterations":(\d+)/)[1]);
+      const marker=JSON.parse(extension.match(/"markerFile":("(?:\\.|[^"\\])*")/)[1]);
+      // Protocol fixture: verifies the adapter/SDK budget and terminal mapping.
+      // It does not prove a native provider hook stops a real HTTP request.
+      fs.writeFileSync('fixture-iterations.json',JSON.stringify({limit,requests:limit}));
+      fs.writeFileSync(marker,'exhausted\n');
+      emit({type:'agent_end',messages:[]});return;
+    }
     const results = [];
     for (const [i, call] of (request.calls || []).entries()) {
       results.push(await new Promise((resolve, reject) => {
         const socket = net.connect(process.env.MILKIE_TOOL_SOCKET);
+        socket.setEncoding('utf8');
         let buffer = '';
         socket.on('error', reject);
         socket.on('connect', () => socket.write(JSON.stringify({ id: String(i), nativeCallId: 'native-' + i, ...call }) + '\n'));

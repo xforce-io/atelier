@@ -18,13 +18,13 @@ export async function probeCli(execution:ExecutionClient,contextId:string,challe
   const result=(state:CliProbeOutcome['state'],code:string)=>({state,code});
   if(signal.aborted)return result('inconclusive','cancelled');
   const capabilities=execution.capabilities();
-  if(!capabilities.supported||!capabilities.hostTools||!capabilities.cancel||!capabilities.resume||!capabilities.forwarding.includes('serial'))return result('failed','cli_native_failed');
+  if(!capabilities.supported||!capabilities.hostTools||!capabilities.modelIterations||!capabilities.cancel||!capabilities.resume||!capabilities.forwarding.includes('serial'))return result('failed','cli_native_failed');
   let id:string|undefined;let calls=0;let valid=false;let cancellation:Promise<unknown>|undefined;
   const stop=()=>{if(id&&!cancellation)cancellation=execution.cancel(id).catch(()=>{});};
   signal.addEventListener('abort',stop,{once:true});
   try {
     id=execution.start(contextId,JSON.stringify({connectionProbe:{instruction:'Call connection_probe exactly once with the challenge below, then finish with a short acknowledgment. No other actions.',challenge}}),{
-      tools:[{name:'connection_probe',description:'Confirm this isolated connection check; no business side effects.',inputSchema:{type:'object',properties:{challenge:{type:'string'}},required:['challenge'],additionalProperties:false}}],forwarding:'serial',timeoutMs:120000
+      tools:[{name:'connection_probe',description:'Confirm this isolated connection check; no business side effects.',inputSchema:{type:'object',properties:{challenge:{type:'string'}},required:['challenge'],additionalProperties:false}}],forwarding:'serial',timeoutMs:120000,maxModelIterations:50
     },call=>{
       calls++;
       const input=call.input;

@@ -4,7 +4,7 @@
 
 ## 固定依赖
 
-使用 milkie 修复提交 `da7767790bcb38e30aa49910ad05fba3670689ca`（已通过 [milkie PR #274](https://github.com/xforce-io/milkie/pull/274) 合入主分支，固定的是其变更提交）。本次增加失败 checkpoint 续接的空 assistant 请求投影修复，checkpoint 格式与有效历史不变。该提交已有 AgentRuntime 内置工具白名单、稳定 toolCallId、Run 控制和原生 checkpoint。NPM 的 `@freemanxu/milkie@0.1.1` 包早于这些能力，不能以相同版本号当作兼容版本。
+使用 milkie 修复提交 `a3c1af0e479c9307140e6335da0e55efcf8785cc`（[PR #276](https://github.com/xforce-io/milkie/pull/276)，尚未合入）。固定 Git 快照包含空 assistant 请求投影修复，以及原生 CLI 每次启动的模型迭代预算和工具 UTF-8 字节边界。Atelier 显式设置50次模型迭代，工具结果及核对输出各限256 KiB，编码请求限2 MiB；能力不足不启动。checkpoint、已有会话和任务额度保留；依赖升级后须重新核对诊断与镜像，旧成功记录不能改签为新环境验证。NPM 的 `@freemanxu/milkie@0.1.1` 包早于这些能力，不能以相同版本号当作兼容版本。
 
 准备一个包含该提交的 milkie Git 仓库，在本目录运行：
 

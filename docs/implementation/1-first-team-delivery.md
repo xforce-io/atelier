@@ -925,3 +925,16 @@ S4.A2的CLI与Skill真实拒绝、返工和新版接受路径均已闭合。当�
 新增回归核对200 KiB换行、最大ASCII、最坏六倍转义NUL及中文内容，重复调用不重复写入，原始内容超限拒绝及拒绝结果持久化，编码请求超限不改变候选。真实Rust↔Node私有管道将256 KiB NUL传至核心并核对固定文件字节；TypeScript持久账本模拟核心已提交但回执丢失，重新打开后沿用原操作ID、完整结果且效果恰1次。上述为Integration/Unit证据，不伪称新原生模型验收或独立审查通过。
 
 本地Rust全量161项通过，13项环境测试仍ignored；TypeScript61项通过；格式、Clippy及差异检查通过。原始记录`review-file-json-core-regression.log`、`review-file-json-rust-all.log`、`review-file-json-typescript-regression.log`、`review-file-json-clippy.log`。新源码候选须使用自身CI和后续审查，不将6cecfec的审查或旧镜像驾驶改签到新源码；未创建Atelier PR，未合入。
+
+
+## 2026-10-04：接入 milkie #275，真实原生预算检查仍有差异
+
+用户提供[PR #276](https://github.com/xforce-io/milkie/pull/276)，当前冻结SDK提交a3c1af0e479c9307140e6335da0e55efcf8785cc，尚未合入main，未发布npm。Atelier沿L1 v0.10修订L2 v0.27，独立Git快照构建依赖包，同步锁文件、核心/接入握手、镜像标签及CI来源。原生执行和连接诊断明确要求modelIterations能力并设置每次50次上限；SDK iteration_budget_exhausted映射为核心budget_exhausted，单独保留停止事实和会话标识。
+
+正常结果及SDK核对结果按UTF-8字节限256 KiB。恢复向SDK保存原核心结果，操作元数据另存账本；模型通过operationId引用同一完整结果，避免重复正文和恢复包装使合法最大结果超限。恢复日志支持100条有限结果及元数据，不再用1 MiB日志限额误拒两个最大结果；历史核对日志兼容读取。新回归包括缺能力启动前拒绝、预算50与终态映射、80 KiB/最大ASCII/中文结果、最大结果丢回执后核对、超过1 MiB日志重开及效果不重复。Pi协议夹具修复UTF-8跨数据块解码；夹具只验证接线，不作为真实模型证据。
+
+本地TypeScript66项、Rust161项、格式及Clippy通过，13项Rust环境测试仍ignored。固定SDK快照执行72项通过；首次npm ci禁用依赖生命周期导致SQLite原生绑定缺失，57项storage_error，失败日志保留；正确启用原生依赖构建后72项全部通过，未改断言或源码。当前镜像sha256:1cd6b6a00fdbf496f2c5fb0ee7dc7de801a549987d9fa4487a91f163b428108a，Pi0.85.1/Grok1.0.46及原Grok二进制摘要保持；源码与镜像内接入构建产物逐文件一致。container/login/runtime三项实际Docker接线回归通过，原生CLI响应与登录仍明确为夹具。
+
+随后使用原成员专用登录目录及原工作区环境锁，在新镜像、生产限制代理和隔离容器中运行实际SDK模型检查；没有复制登录材料、改已有任务或业务额度。Pi openai-codex/gpt-5.6-sol在预算2时调用2次无副作用检查工具，SDK记录failed/iteration_budget_exhausted、exhausted=true且stopped；同一会话随后在预算50下调用1次并succeeded/stopped。Grok grok-4.7-build-fast预算2时调用1次后failed/native_cancelled、exhausted=false，未满足期望预算终态；同一会话随后预算50成功调用1次。两者资源已按归属清理。此为真实SDK组件检查，不替代新的完整CLI/Skill团队验收，也没有直接记录提供商HTTP请求次数。Grok预算路径不能记pass，需核对真实原生停止事件并反馈上游。
+
+证据milkie-275-integration-summary.json、milkie-275-native-budget.json及其引用原始日志。既有小游戏正式接受保持，历史真实团队证据仍绑定原SDK/镜像。新候选尚未获得独立审查PASS；旧审查覆盖缺口及本次真实Grok差异未关闭，未创建Atelier PR或合入，不宣称端到端完成。

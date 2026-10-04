@@ -27,28 +27,34 @@ interface Launch extends Scope { nativeContextId: string; }
 interface Recovery { callId: string; output: string; operation?: RecoveredOperation; }
 const identifier = (value: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
 const failed = (code: string): Error => new Error(code);
+const toolResultLimit = 256 * 1024;
+const recoveryCountLimit = 100;
+// The journal holds both a JSON output string and its structured result.
+const recoveryJournalLimit = recoveryCountLimit * (3 * toolResultLimit + 4096);
 
 /** Synchronous publication keeps the SDK's return -> run mapping boundary in
  * one host turn, before any handler can run. A crash before publication remains
  * an explicit missing binding, never permission to replay an unknown call. */
-function save(path: string, value: unknown): void {
+function save(path: string, value: unknown, limit = 1024 * 1024): void {
+  const encoded = JSON.stringify(value);
+  if (Buffer.byteLength(encoded) > limit) throw failed('cli_journal_too_large');
   const temporary = path + '.' + randomUUID() + '.tmp';
   const fd = openSync(temporary, 'wx', 0o600);
-  try { writeFileSync(fd, JSON.stringify(value)); fsyncSync(fd); } finally { closeSync(fd); }
+  try { writeFileSync(fd, encoded); fsyncSync(fd); } finally { closeSync(fd); }
   try {
     renameSync(temporary, path);
     const fd = openSync(dirname(path), 'r');
     try { fsyncSync(fd); } finally { closeSync(fd); }
   } finally { try { unlinkSync(temporary); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; } }
 }
-async function read(path: string): Promise<unknown> {
+async function read(path: string, limit = 1024 * 1024): Promise<unknown> {
   const stat = await fs.lstat(path);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) throw failed('cli_journal_invalid');
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > limit) throw failed('cli_journal_invalid');
   return JSON.parse(await fs.readFile(path, 'utf8')) as unknown;
 }
 function result(value: unknown): Awaited<ReturnType<ToolHandler>> {
   const encoded = JSON.stringify(value);
-  if (encoded === undefined || Buffer.byteLength(encoded) > 65536) throw failed('cli_tool_result_too_large');
+  if (encoded === undefined || Buffer.byteLength(encoded) > toolResultLimit) throw failed('cli_tool_result_too_large');
   // A business refusal is a failed tool call, not an SDK execution failure.
   if (value && typeof value === 'object' && (value as {ok?: unknown}).ok === false) {
     return { ok: false, code: 'rejected', message: encoded };
@@ -63,15 +69,15 @@ export async function executeCliTurn(turn: CliTurn): Promise<Terminal> {
   if (![scope.taskId, scope.runId, scope.deliveryId, nativeContextId].every(identifier)) throw failed('cli_binding_invalid');
   const tools = new CliTools(turn.tools);
   const capabilities = execution.capabilities();
-  if (!capabilities.supported || !capabilities.hostTools || !capabilities.resume || !capabilities.cancel || !capabilities.forwarding.includes('serial')) throw failed('cli_capabilities_missing');
+  if (!capabilities.supported || !capabilities.hostTools || !capabilities.modelIterations || !capabilities.resume || !capabilities.cancel || !capabilities.forwarding.includes('serial')) throw failed('cli_capabilities_missing');
   await fs.mkdir(turn.journalDirectory, { mode: 0o700 }).catch(error => { if (error.code !== 'EEXIST') throw error; });
   const stat = await fs.lstat(turn.journalDirectory);
   if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0) throw failed('cli_journal_invalid');
   const recoveryPath = join(turn.journalDirectory, `${scope.deliveryId}.recovery.json`);
   let recoveries: Recovery[] = [];
   try {
-    const value = await read(recoveryPath);
-    if (!Array.isArray(value) || value.length > 100 || value.some(item => !item || typeof item.callId !== 'string' || !identifier(item.callId) || typeof item.output !== 'string' || item.output.length > 65536)) throw failed('cli_recovery_invalid');
+    const value = await read(recoveryPath, recoveryJournalLimit);
+    if (!Array.isArray(value) || value.length > recoveryCountLimit || value.some(item => !item || typeof item.callId !== 'string' || !identifier(item.callId) || typeof item.output !== 'string' || Buffer.byteLength(item.output) > toolResultLimit)) throw failed('cli_recovery_invalid');
     recoveries = value as Recovery[];
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   const ensureActive = () => { if (turn.signal.aborted) throw failed('run_cancelled'); };
@@ -101,13 +107,13 @@ export async function executeCliTurn(turn: CliTurn): Promise<Terminal> {
       const operation = await turn.ledger.reconcileRecordedFor(launch.deliveryId,launch.runId, call.callId, coreToolName(call.name), call.input,reconcile);
       // No host journal means no core request was issued. Never dispatch that
       // previously queued request for the first time during recovery.
-      const output = JSON.stringify(operation ? { status: 'reconciled', ...operation } : { status: 'not_executed', reason: 'host_stopped_before_dispatch' });
-      if (output.length > 65536) throw failed('cli_recovery_too_large');
+      const output = JSON.stringify(operation ? operation.result : { status: 'not_executed', reason: 'host_stopped_before_dispatch' });
+      if (Buffer.byteLength(output) > toolResultLimit) throw failed('cli_recovery_too_large');
       const saved = { callId: call.callId, output, ...(operation ? { operation } : {}) };
       recoveries = recoveries.filter(item => item.callId !== call.callId);
       recoveries.push(saved);
-      if (recoveries.length > 100) throw failed('cli_recovery_too_large');
-      save(recoveryPath, recoveries);
+      if (recoveries.length > recoveryCountLimit) throw failed('cli_recovery_too_large');
+      save(recoveryPath, recoveries, recoveryJournalLimit);
       if (call.status === 'pending') execution.reconcile(call.callId, saved.output);
     }
   }
@@ -115,7 +121,7 @@ export async function executeCliTurn(turn: CliTurn): Promise<Terminal> {
   for (const operation of [...transportRecovery, ...recoveries.flatMap(item => item.operation ? [item.operation] : [])]) recovered.set(operation.operationId, operation);
   const prompt = JSON.stringify({ goal: turn.goal, skill: turn.skill,
     cliToolNames, cliToolGuidance: 'Skill 与记录使用核心操作名；调用 CLI 工具时按 cliToolNames 替换对应名称，其余名称不变。仅当前提供的工具获准使用。',
-    workMessage: turn.input, reconciledOperations: [...recovered.values()], reconciledCalls: recoveries.map(({callId, output}) => ({callId, output})) });
+    workMessage: turn.input, reconciledOperations: [...recovered.values()], reconciledCalls: recoveries.map(({callId, output, operation}) => operation ? {callId, operationId: operation.operationId, status: 'reconciled'} : {callId, output}) });
   ensureActive();
   let runId: string | undefined;
   let uncertain = false;
@@ -126,7 +132,7 @@ export async function executeCliTurn(turn: CliTurn): Promise<Terminal> {
   const onAbort = () => stop();
   turn.signal.addEventListener('abort', onAbort, { once: true });
   try {
-    runId = execution.start(nativeContextId, prompt, { tools: tools.specs, forwarding: 'serial', timeoutMs: 15 * 60 * 1000 }, async call => {
+    runId = execution.start(nativeContextId, prompt, { tools: tools.specs, forwarding: 'serial', timeoutMs: 15 * 60 * 1000, maxModelIterations: 50 }, async call => {
       if (turn.signal.aborted || uncertain || exceeded) return { ok: false, code: 'rejected', message: 'Execution is stopping.' };
       if (++calls > 100) { exceeded = true; stop(); await cancel; return { ok: false, code: 'rejected', message: 'Tool call budget exhausted.' }; }
       if (call.runId !== runId || call.contextId !== nativeContextId) { uncertain = true; stop(); await cancel; throw failed('cli_call_binding_mismatch'); }
@@ -149,7 +155,7 @@ export async function executeCliTurn(turn: CliTurn): Promise<Terminal> {
       if (!record) throw failed('cli_run_missing');
       if (record.stopped && record.status !== 'starting' && record.status !== 'running') {
         if (uncertain) throw failed('tool_result_uncertain');
-        const stopReason: Terminal['stopReason'] = exceeded ? 'budget_exhausted' : record.status === 'succeeded' ? 'completed' : record.status === 'cancelled' ? 'cancelled' : record.status === 'timed_out' ? 'deadline' : 'failed';
+        const stopReason: Terminal['stopReason'] = exceeded || record.code === 'iteration_budget_exhausted' ? 'budget_exhausted' : record.status === 'succeeded' ? 'completed' : record.status === 'cancelled' ? 'cancelled' : record.status === 'timed_out' ? 'deadline' : 'failed';
         if(stopReason==='completed')await turn.ledger.confirmForeignRecovery();
         return { stopReason, ...(exceeded ? { stopCode: 'TOOL_CALL_BUDGET_EXCEEDED' } : record.code ? { stopCode: record.code } : {}), nativeStopReason: record.status, recoveredOperations: recovered.size };
       }
