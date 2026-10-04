@@ -50,3 +50,5 @@ CLI 生产资源有创建许可：许可未授予的客户端中断可证明没�
 跨投递核对通过专用只读通道进行：原 Run 必须已停止，同 Task/Worker/配置/原生上下文，且当前仍有原工具权限。已提交返回原结果，未提交返回 not_executed；两者均不补执行或改变消息/工具额度。开发测试覆盖指纹冲突、错误投递/上下文、撤权、跨投递 SDK 续接及核对后再次中断；旧 pending 在新原生轮次持久成功前保留。真实模型下的完整恢复仍须按 L1.8 取证。
 
 真实 DeepSeek 报告任务中出现模型正常结束、没有保存消息处理结果的情况。核心保留 blocked；修复后投递及失败/恢复通知明确说明“未记录有效的消息处理结果”，Run 仍保留原始 completed 原因。新增持久化回归覆盖这一区别，不自动补处理结果或重放模型。实证见 `report-intake-result-20261003.json`，该次历史记录保留修复前原文。
+
+S5.A10 补充确定性文件竞态与真实 Docker：文件授权规划后、清单发布前撤权，已发布保留、未发布不进入产出/账本；实际检查容器运行后撤权，资源核对停止前不能释放 Run，最终 inconclusive，旧缓存拒绝，无独立检验。成员为 fixture。见 `revocation_between_file_preparation_and_publication_keeps_only_prior_manifest`、`real_docker_revocation_stops_inflight_check_without_publishing_success` 与 `check-revocation-afaf4173-fb0c-4a57-a4f5-8c2b9433f9b1.json`；154 项 Rust 回归通过，结合已有旧 Run 不复活断言后该条开发证据齐备，整个 S5 未验收。

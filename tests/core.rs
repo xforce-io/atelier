@@ -4565,6 +4565,21 @@ fn handoff_rejects_partial_and_wrong_task_and_keeps_target_configuration_blocked
 
 impl Fixture {
     fn prepare_code_execution(&mut self, image: &str) -> (Run, String) {
+        self.prepare_code_execution_with_profile(atelier::profile::VerificationProfile {
+            name: "井字棋可信检查".into(),
+            check_id: "tic-tac-toe-browser-v1".into(),
+            image: image.into(),
+            argv: vec![
+                "node".into(),
+                "/checks/check.mjs".into(),
+                "/candidate".into(),
+            ],
+        })
+    }
+    fn prepare_code_execution_with_profile(
+        &mut self,
+        specification: atelier::profile::VerificationProfile,
+    ) -> (Run, String) {
         let leader_config = (self.team.leader != self.human).then(|| self.prepare_digital_leader());
         self.grant_direct_handoff();
         let verifier = self.prepare_verifier();
@@ -4583,21 +4598,7 @@ impl Fixture {
             .unwrap();
         let profile = self
             .store
-            .execute(
-                "profile",
-                &Command::ProfileImport {
-                    specification: atelier::profile::VerificationProfile {
-                        name: "井字棋可信检查".into(),
-                        check_id: "tic-tac-toe-browser-v1".into(),
-                        image: image.into(),
-                        argv: vec![
-                            "node".into(),
-                            "/checks/check.mjs".into(),
-                            "/candidate".into(),
-                        ],
-                    },
-                },
-            )
+            .execute("profile", &Command::ProfileImport { specification })
             .unwrap();
         let task = self.create();
         let id = task["task"]["id"].as_str().unwrap();
@@ -4881,6 +4882,151 @@ async fn real_docker_check_collects_bound_evidence_and_cannot_be_overridden_by_m
     let path = root.join(format!("core-docker-check-{}.json", uuid::Uuid::new_v4()));
     std::fs::write(&path,serde_json::to_vec_pretty(&json!({"productAcceptance":false,"realDockerChecks":true,"modelFixture":true,"evidence":evidence})).unwrap()).unwrap();
     println!("Docker integration evidence: {}", path.display());
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[ignore = "requires prepared immutable Docker image; run explicitly for revocation evidence"]
+async fn real_docker_revocation_stops_inflight_check_without_publishing_success() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".agents/verify-runs/1");
+    std::fs::create_dir_all(&root).unwrap();
+    let dir = tempfile::Builder::new()
+        .prefix("core-check-revocation-")
+        .tempdir_in(&root)
+        .unwrap();
+    let mut f = Fixture::in_directory(false, dir);
+    let (run, _) = f.prepare_code_execution_with_profile(atelier::profile::VerificationProfile {
+        name: "撤权竞态测试：延迟报告".into(),
+        check_id: "delayed-fixture".into(),
+        image: CLI_RESOURCE_IMAGE.into(),
+        argv: vec!["node".into(), "-e".into(), "setTimeout(()=>console.log(JSON.stringify({checkId:'delayed-fixture',results:[{name:'late',status:'pass'}]})),60000)".into()],
+    });
+    let database = Database::open(f.dir.path().into(), 8).await.unwrap();
+    let client = database.client();
+    client
+        .runtime_prepare_candidate("service".into(), run.id.clone())
+        .await
+        .unwrap();
+    f.store.runtime_begin_launch("service", &run.id).unwrap();
+    let run = f
+        .store
+        .runtime_child_started("service", &run.id, 321, "fixture-check-revocation")
+        .unwrap();
+    let binding = f.store.bind_member("service", &run.id).unwrap();
+    let operation = member_operation(
+        &run,
+        "check",
+        "run_check",
+        json!({"checkId":"delayed-fixture"}),
+    );
+    let pending = tokio::spawn({
+        let client = client.clone();
+        let binding = binding.clone();
+        let operation = operation.clone();
+        async move { client.member_call(binding, operation).await }
+    });
+    let sql = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3")).unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    let check = loop {
+        if pending.is_finished() {
+            panic!("检查在观测到运行容器前返回：{:?}", pending.await);
+        }
+        let id: Option<String> = sql
+            .query_row("SELECT id FROM checks WHERE run_id=?1", [&run.id], |r| {
+                r.get(0)
+            })
+            .ok();
+        if let Some(id) = id {
+            let check = f.store.check(&id).unwrap();
+            let output = tokio::process::Command::new("docker")
+                .args(["inspect", &check.container_name])
+                .output()
+                .await
+                .unwrap();
+            if output.status.success() {
+                let state: Value = serde_json::from_slice(&output.stdout).unwrap();
+                assert_eq!(state[0]["Config"]["Labels"]["atelier.run"], run.id);
+                if state[0]["State"]["Running"] == true {
+                    break check;
+                }
+            }
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "检查容器应实际进入 running"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    // Cleanup is restricted to the test-created, ownership-checked container.
+    struct Cleanup(String);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = std::process::Command::new("docker")
+                .args(["rm", "-f", &self.0])
+                .output();
+        }
+    }
+    let _cleanup = Cleanup(check.container_name.clone());
+    f.store
+        .execute(
+            "revoke-check",
+            &Command::PermissionsUpdate {
+                decision_id: None,
+                team_id: f.team.id.clone(),
+                revision: f.store.team(&f.team.id).unwrap().revision,
+                grant: BTreeMap::new(),
+                revoke: BTreeMap::from([(run.worker_id.clone(), vec![Permission::Execute])]),
+            },
+        )
+        .unwrap();
+    assert!(
+        f.store
+            .runtime_run_observed_stopped("service", &run.id, "不得提前释放检查资源")
+            .is_err()
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_secs(30), pending)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err()
+    );
+    let observed = f.store.check(&check.id).unwrap();
+    assert_eq!(observed.state, "finished");
+    assert_eq!(observed.conclusion.as_deref(), Some("inconclusive"));
+    assert!(observed.resources_stopped);
+    assert!(
+        client.member_call(binding, operation).await.is_err(),
+        "撤权后不能读取旧检查缓存"
+    );
+    let artifact = client
+        .runtime_fix_artifact(
+            "service".into(),
+            run.id.clone(),
+            "fixture member stopped after actual check cleanup".into(),
+        )
+        .await
+        .unwrap();
+    assert!(artifact.partial);
+    assert!(
+        f.store
+            .task(&run.task_id)
+            .unwrap()
+            .current_artifact
+            .is_none()
+    );
+    assert_eq!(f.store.run(&run.id).unwrap().state, "stopped");
+    let verification_count: u64 = sql
+        .query_row(
+            "SELECT count(*) FROM verifications WHERE task_id=?1",
+            [&run.task_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(verification_count, 0);
+    let evidence = root.join(format!("check-revocation-{}.json", uuid::Uuid::new_v4()));
+    std::fs::write(&evidence, serde_json::to_vec_pretty(&json!({"scope":"real Docker and core; fixture member, no model","checkBeforeRevoke":check,"checkAfterRevoke":observed,"artifact":artifact,"run":f.store.run(&run.id).unwrap()})).unwrap()).unwrap();
+    println!("Check revocation evidence: {}", evidence.display());
+    database.close().await.unwrap();
 }
 
 #[test]
@@ -5330,6 +5476,74 @@ async fn member_file_tools_publish_atomically_and_verifier_only_reads_fixed_arti
             .any(|t| t["name"] == "write_file")
     );
     database.close().await.unwrap();
+}
+
+#[test]
+fn revocation_between_file_preparation_and_publication_keeps_only_prior_manifest() {
+    use std::{future::Future, task::Poll};
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let mut f = Fixture::new(false);
+        let (run, _) = f.prepare_code_execution(&format!("sha256:{}", "a".repeat(64)));
+        let database = Database::open(f.dir.path().into(), 8).await.unwrap();
+        let client = database.client();
+        client.runtime_prepare_candidate("service".into(), run.id.clone()).await.unwrap();
+        f.store.runtime_begin_launch("service", &run.id).unwrap();
+        let run = f.store.runtime_child_started("service", &run.id, 321, "fixture-revoke-file").unwrap();
+        let binding = f.store.bind_member("service", &run.id).unwrap();
+        let committed = member_operation(&run, "committed", "write_file", json!({"path":"prior.txt","content":"撤权前已发布"}));
+        assert_eq!(client.member_call(binding.clone(), committed.clone()).await.unwrap()["ok"], true);
+        let sql = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3")).unwrap();
+        let manifest = || -> String { sql.query_row("SELECT data FROM candidates WHERE run_id=?1", [&run.id], |r| r.get(0)).unwrap() };
+        let before = manifest();
+
+        // Hold the only blocking worker, without holding SQLite. Two explicit
+        // polls and a DB queue fence place the call after authorized planning
+        // but before file preparation/publication; no sleeps or race timing.
+        let (release, blocked) = std::sync::mpsc::channel::<()>();
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let held = tokio::task::spawn_blocking(move || {
+            let _ = started.send(());
+            let _ = blocked.recv();
+        });
+        ready.await.unwrap();
+        let content = "撤权后不得发布的在途写入";
+        let operation = member_operation(&run, "inflight", "write_file", json!({"path":"late.txt","content":content}));
+        let mut pending = Box::pin(client.member_call(binding.clone(), operation));
+        std::future::poll_fn(|cx| {
+            assert!(pending.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        }).await;
+        client.call(|_| Ok(())).await.unwrap();
+        std::future::poll_fn(|cx| {
+            assert!(pending.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        }).await;
+        let blob = f.dir.path().join("objects/blobs").join(atelier::content::digest(content.as_bytes()));
+        assert!(!blob.exists());
+        f.store.execute("revoke-inflight", &Command::PermissionsUpdate {
+            decision_id: None, team_id: f.team.id.clone(), revision: f.store.team(&f.team.id).unwrap().revision,
+            grant: BTreeMap::new(), revoke: BTreeMap::from([(run.worker_id.clone(), vec![Permission::Execute])]),
+        }).unwrap();
+        drop(release);
+        held.await.unwrap();
+        assert!(pending.await.is_err());
+        assert!(blob.exists(), "文件已准备，但撤权阻止了清单发布");
+        assert_eq!(manifest(), before);
+        let count: u64 = sql.query_row("SELECT count(*) FROM member_requests WHERE delivery_id=?1 AND operation_id='op-inflight'", [&run.delivery_id], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+        assert!(client.member_call(binding, committed).await.is_err(), "旧缓存不能绕过撤权");
+        let artifact = client.runtime_fix_artifact("service".into(), run.id.clone(), "fixture: member stopped and inflight call drained".into()).await.unwrap();
+        assert!(artifact.partial);
+        assert!(artifact.files.iter().any(|f| f.path == "prior.txt"));
+        assert!(!artifact.files.iter().any(|f| f.path == "late.txt"));
+        assert!(f.store.task(&run.task_id).unwrap().current_artifact.is_none());
+        database.close().await.unwrap();
+    });
 }
 
 #[tokio::test(flavor = "current_thread")]
