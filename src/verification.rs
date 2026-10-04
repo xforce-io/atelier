@@ -309,7 +309,7 @@ pub(crate) fn submit(
     )?;
     let mut updated = task.clone();
     let leader = task.team_snapshot.leader.clone();
-    enqueue(db,&mut updated,&run.worker_id,&run.id,Message {recipient:&leader,kind:"result",body:&json!({"verificationId":v.id,"artifactId":v.artifact_id,"conclusion":v.conclusion,"reason":reason,"next":"由有权成员决定返工、等待或请求人工验收；本结果不关闭任务"}).to_string(),reply_to:None,event:Some(&format!("verification:{}:{leader}",run.id)),mandatory:true})?;
+    enqueue(db,&mut updated,&run.worker_id,&run.id,Message {recipient:&leader,kind:"result",body:&json!({"verificationId":v.id,"artifactId":v.artifact_id,"checkRecordId":v.check_id,"conclusion":v.conclusion,"reason":reason,"next":"由有权成员决定返工、等待或请求人工验收；本结果不关闭任务"}).to_string(),reply_to:None,event:Some(&format!("verification:{}:{leader}",run.id)),mandatory:true})?;
     crate::disposition::record(
         db,
         run,

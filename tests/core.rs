@@ -6912,6 +6912,17 @@ async fn self_test_snapshot_and_member_ledger_commit_together_without_delivery_e
     assert_eq!(queued["ok"], true, "{queued}");
     assert_eq!(queued["data"]["check"]["target"]["kind"], "candidate");
     let id = queued["data"]["check"]["id"].as_str().unwrap();
+    let read = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(&run, "discover-own-check", "task_read", json!({})),
+        )
+        .unwrap();
+    assert_eq!(read["data"]["checks"].as_array().unwrap().len(), 1);
+    assert_eq!(read["data"]["checks"][0]["id"], id);
+    assert_eq!(read["data"]["checks"][0]["target"]["kind"], "candidate");
+    assert!(read["data"]["checks"][0].get("container_name").is_none());
     let snapshot: String = sql
         .query_row("SELECT data FROM check_inputs WHERE id=?1", [id], |r| {
             r.get(0)
@@ -8727,6 +8738,66 @@ fn acceptance_rejects_invalid_or_unmatched_independent_evidence() {
 }
 
 #[test]
+fn nonleader_check_index_does_not_expose_another_members_evidence() {
+    let mut f = Fixture::new(false);
+    let (verifier, verification) = f.acceptance_fixture();
+    f.store
+        .runtime_run_observed_stopped("service", &verifier.id, "fixture verifier stopped")
+        .unwrap();
+    let task = f.store.task(&verification.task_id).unwrap();
+    let executor = task.team_snapshot.executor.as_ref().unwrap();
+    let config = task.worker_snapshots[executor]
+        .execution_config
+        .as_ref()
+        .unwrap();
+    let note = f
+        .store
+        .execute(
+            "executor-note",
+            &Command::MessageSend {
+                task_id: task.id.clone(),
+                recipient: executor.clone(),
+                kind: "work.note".into(),
+                body: "查询当前职责可见的工作事实".into(),
+                reply_to: None,
+            },
+        )
+        .unwrap();
+    let run = f
+        .store
+        .runtime_claim("service", note["deliveryId"].as_str().unwrap(), config)
+        .unwrap();
+    f.store.runtime_begin_launch("service", &run.id).unwrap();
+    let run = f
+        .store
+        .runtime_child_started("service", &run.id, 321, "fixture executor coordination")
+        .unwrap();
+    let binding = f.store.bind_member("service", &run.id).unwrap();
+    let read = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(&run, "index", "task_read", json!({})),
+        )
+        .unwrap();
+    assert_eq!(read["data"]["checks"], json!([]));
+    let denied = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(
+                &run,
+                "read-other-check",
+                "check_read",
+                json!({"id":verification.check_id}),
+            ),
+        )
+        .unwrap();
+    assert_eq!(denied["ok"], false);
+    assert_eq!(denied["error"]["code"], "forbidden");
+}
+
+#[test]
 fn digital_leader_requests_acceptance_and_processes_rejection_through_mailbox() {
     let mut f = Fixture::new(true);
     let (verify, v) = f.acceptance_fixture();
@@ -8758,6 +8829,43 @@ fn digital_leader_requests_acceptance_and_processes_rejection_through_mailbox() 
         .runtime_child_started("service", &run.id, 321, "fixture-acceptance-requester")
         .unwrap();
     let binding = f.store.bind_member("service", &run.id).unwrap();
+    let incoming: Value = serde_json::from_str(
+        mail.as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["id"] == delivery)
+            .unwrap()["message"]["body"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(incoming["checkRecordId"], v.check_id);
+    let indexed = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(&run, "discover-verifier-check", "task_read", json!({})),
+        )
+        .unwrap();
+    let checks = indexed["data"]["checks"].as_array().unwrap();
+    assert_eq!(checks.len(), 1);
+    assert_eq!(checks[0]["id"], v.check_id);
+    assert_eq!(checks[0]["target"]["artifact_id"], v.artifact_id);
+    assert_eq!(checks[0]["runId"], verify.id);
+    let evidence = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(
+                &run,
+                "read-verifier-check",
+                "check_read",
+                json!({"id":checks[0]["id"]}),
+            ),
+        )
+        .unwrap();
+    assert_eq!(evidence["ok"], true);
+    assert_eq!(evidence["data"]["id"], v.check_id);
     assert!(
         f.store
             .execute(

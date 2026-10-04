@@ -821,6 +821,19 @@ fn member_effect(
                         "checkId":profile.specification.check_id}))
                 })
                 .transpose()?;
+            let mut checks = Vec::new();
+            let mut stmt = db.prepare("SELECT c.data FROM checks c JOIN runs r ON r.id=c.run_id WHERE r.task_id=?1 ORDER BY c.rowid")?;
+            for row in stmt.query_map([&task.id], |r| r.get::<_, String>(0))? {
+                let check: crate::verification::Check = serde_json::from_str(&row?)?;
+                if check.task_id == task.id
+                    && (task.team_snapshot.leader == run.worker_id || check.run_id == run.id)
+                {
+                    checks.push(
+                        json!({"id":check.id,"runId":check.run_id,"target":check.target,
+                        "state":check.state,"conclusion":check.conclusion}),
+                    );
+                }
+            }
             let mut stmt =
                 db.prepare("SELECT data FROM decisions WHERE task_id=?1 ORDER BY rowid")?;
             let rows = stmt
@@ -839,7 +852,7 @@ fn member_effect(
             return Ok(
                 json!({"id":task.id,"goal":task.goal,"state":task.state,"revision":task.revision,
                 "decisions":decisions,"deliveries":crate::retry::list(db,task,&run.worker_id)?,"blockers":crate::blocker::list(db,&task.id)?,"assignments":crate::assignment::list(db,&task.id)?,"reworks":crate::rework::list(db,&task.id)?,"currentArtifact":task.current_artifact,"handoffs":crate::handoff::list(db,&task.id)?,
-                "contract":task.contract,"verificationProfile":verification_profile,"responsibilities":{"leader":task.team_snapshot.leader,"executor":task.team_snapshot.executor,"verifier":task.team_snapshot.verifier,"acceptor":task.team_snapshot.acceptor},
+                "contract":task.contract,"verificationProfile":verification_profile,"checks":checks,"responsibilities":{"leader":task.team_snapshot.leader,"executor":task.team_snapshot.executor,"verifier":task.team_snapshot.verifier,"acceptor":task.team_snapshot.acceptor},
                 "budget":{"runsUsed":task.runs_used,"messagesUsed":task.messages_used,"reworksUsed":task.reworks_used,"reworksReserved":crate::rework::reserved(db,&task.id)?}}),
             );
         }

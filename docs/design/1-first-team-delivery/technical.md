@@ -1,6 +1,6 @@
 # L2 技术设计：异步团队、成员收件箱与共同工作核心
 
-版本：v0.22，2026-10-04 修订；状态：Draft，基础实现进行中，未验收。依据：[L1 v0.10（2026-10-01 修订）](product.md)、[Issue #1](https://github.com/xforce-io/atelier/issues/1)、[名词表](../../glossary.md)。本版取代 v0.8 的“宿主串联前台执行命令”主干，定义目标契约；实际能力与验证情况另见 [实现记录](../../implementation/1-first-team-delivery.md)。
+版本：v0.23，2026-10-04 修订；状态：Draft，基础实现进行中，未验收。依据：[L1 v0.10（2026-10-01 修订）](product.md)、[Issue #1](https://github.com/xforce-io/atelier/issues/1)、[名词表](../../glossary.md)。本版取代 v0.8 的“宿主串联前台执行命令”主干，定义目标契约；实际能力与验证情况另见 [实现记录](../../implementation/1-first-team-delivery.md)。
 
 本次范围来源及 Issue 旧版差异见 L1 文首修订追踪；L2 仅以 L1 v0.10 为当前设计依据。2026-10-01 线上 Issue #1 已同步范围与验收汇总，用户随后要求继续开发；三处恢复契约的规则与状态见 §9。v0.11 沿用已确认的 L1 v0.10 与全部验收，仅明确已合入的 milkie SDK、工具参数校验和 CLI 回复恢复契约；不将上游合入当作 Atelier 接入或产品验收完成。
 
@@ -14,7 +14,7 @@ v0.20 沿用 L1 v0.10，明确 API 上下文预算分配与失败终态的可见
 
 v0.21 沿用 L1 v0.10。实际 API 工具往返暴露默认轮内预算不能容纳普通代码读写，明确完整请求及各区域的有限上限，保留超限失败和原生历史证据；未将新增预算视为恢复或业务成功证明。
 
-v0.22 沿用 L1 v0.10，明确成员必须能从当前任务读取冻结检查的名称标识；不依赖目标文字附带内部 ID，不开放任意检查选择或执行参数。
+v0.23 沿用 L1 v0.10，在 v0.22 冻结检查名称可见的基础上补齐可见检查记录索引；检查名称与检查记录 ID 分开，负责人无需猜测 ID 即可查看结果证据，不扩展证据读取权限。
 
 ## 1. 设计依据与技术目标
 
@@ -399,6 +399,8 @@ task.report_blocker 保存 open 记录、通知与停止请求；无产出允许
 成员工具包括 task.read、task.update（仅团队负责人对 pending 任务补齐）、task.intake、task.arrange、message.send、message.respond、artifact.submit、handoff.offer/respond、verification.submit、task.report_blocker、blocker.resolve、decision.request、decision.respond/record。按权限只提供适用子集。task.arrange 的 execute/verify/rework 为受控枚举，不能传任意命令；handoff.offer 只接受核心 Artifact 或本 Run 的提交引用，后者在停止固定前不向检验者发布。业务提交与最终结果之间的失败均保留明确状态。
 
 成员 `task_read` 在既有范围校验后返回当前契约引用的 `verificationProfile`：仅含 `id`、`name`、`checkId`，未绑定配置时为 null。该字段由冻结配置记录读取，不从目标或模型推测；不返回镜像、命令、路径或其它配置。`run_check.checkId` 使用该字段的 checkId，配置记录的 id 不能替代它；缓存与新调用继续沿用当前权限及版本校验。
+
+成员 `task_read.checks` 返回可见检查的简要索引（`id`、`runId`、`target`、`state`、`conclusion`），无记录时为空数组；团队负责人可见本任务记录，其他成员仅可见本 Run 记录，与 `check_read` 的范围一致。索引不返回原始日志、容器或路径。`check_read.id` 使用检查记录 ID，不能用 `verificationProfile.checkId` 的检查名称、检验 ID 或 Run ID 代替；检验结果通知同时携带 `checkRecordId`，旧通知仍可通过当前任务索引定位证据。
 
 执行和检验的代码工具为 list_files/read_file、执行者的 write_file/delete_file、获准 run_check。run_check 只接受冻结 checkId。执行/返工 Run 可自测尚未提交的本 Run 候选；检查请求与候选清单快照、候选版本、内容摘要和成员调用记录原子保存，后续修改不改变旧检查输入，修改后须新请求检查当前版本。自测不产生检验记录或后续交接；产出提交后禁止启动新的自测。检验 Run 仅检查交接指定的固定产出，接收前禁止检查。模型通过 verification.submit 交建议与证据引用，核心结合真实检查记录形成结论。协调用途无候选代码写权限，不能凭 task.arrange 获取执行工具。
 
