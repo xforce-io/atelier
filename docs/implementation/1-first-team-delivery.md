@@ -888,7 +888,7 @@ Atelier通过固定提交Git archive构建更新依赖、锁文件、通道握�
 
 新CLI二进制的Keychain读取返回credential_unavailable；用已授权本地环境变量经保护stdin重新保存相同连接凭据，CLI/报告代次分别为7/2，按新接入提交重新检查均passed。连接版本、Task冻结配置、上下文及额度不改；诊断失败和旧凭据代次历史保留。
 
-实际Pi产品Skill（PID87700，36次调用，exit0后已不存在）读取产品合同、查询原三个报告Task，通过正式retry/apply恢复各自失败投递，启动服务后退出，没有代成员承接、安排或交付验收。前三次只读describe误将--task放在全局，原错误保留，宿主读help后改正。DeepSeek三个新Run均resume=true并沿用原contextId：范围明确的报告补齐契约并承接为active，owner为原团队负责人，缺执行器时保持责任和等待；资料不足的报告保持pending并保存wait；要求跳过独立检验和数字员工代验收的报告closed/declined，关闭后的Run按既定取消规则停止，不能将cancelled说成模型完成。所有9个新旧Run停止、运行服务stopped/activeRuns=0；原4条成员操作账本逐条完全一致。S6.A2开发证据齐备，来源`milkie-273-report-resumed-result.json`。
+实际Pi产品Skill（PID87700，36次调用，exit0后已不存在）读取产品合同、查询原三个报告Task，通过正式retry/apply恢复各自失败投递，启动服务后退出，没有代成员承接、安排或交付验收。四次只读describe误将--task放在全局，原错误保留，宿主读help后改正。DeepSeek三个新Run均resume=true并沿用原contextId：范围明确的报告补齐契约并承接为active，owner为原团队负责人，缺执行器时保持责任和等待；资料不足的报告保持pending并保存wait；要求跳过独立检验和数字员工代验收的报告closed/declined，关闭后的Run按既定取消规则停止，不能将cancelled说成模型完成。所有9个新旧Run停止、运行服务stopped/activeRuns=0；原4条成员操作账本逐条完全一致。S6.A2开发证据齐备，来源`milkie-273-report-resumed-result.json`。
 
 CLI从最新第二次人类拒绝的原投递f707abb1恢复，原负责人953f4b63自行引用当前拒绝42ceec28安排返工；f44f979f发布新版24a35b2f，a2ed474a交接独立检验，7b0a0591完成19/19，cd2bf907创建新版请求0208ffae（Task修订3、请求修订1）。正好用完原剩余5次Run，20/20 Run与2/2返工额度保持；原任务、角色和上下文保留，没有重试较旧的失败反馈投递。新版README逐步列出获胜1,5,2,6,3，以及平局1,2,6,4,3,5,8,9,7；主宿主独立复算两局正确，与冻结网页19项检查分开取证。所有20个Run停止、运行服务stopped/activeRuns=0；新请求open，尚无当前人类决定。来源`milkie-273-cli-reworked-result.json`和`milkie-273-cli-readme-checked.json`。
 
