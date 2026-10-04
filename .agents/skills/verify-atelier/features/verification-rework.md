@@ -35,3 +35,5 @@ CLI 和产品 Atelier Skill 分别验证；需要真实成员的路径不可用 
 2026-10-04：真实 Pi/Grok 演练 `4f4c5684…` 完成资料不齐拒收、同产出补齐后新交接；发现冻结 checkId 不可见后由成员正式报阻塞。修复 `615e884` 后原负责人自行核对并解决阻塞，原检验成员新交接后19/19。S3.A3/A6 开发证据齐备；旧 rejected/superseded、当前 accepted 与所有停止事实保留，尚无当前人类接受。见 `skill-handoff-rejection-result-20261004.json`。
 
 L2 v0.23：负责人从 task_read.checks 或检验结果通知的 checkRecordId 取得 check_read.id；冻结 verificationProfile.checkId 仅是 run_check 的名称。真实空输入恢复暴露负责人猜测检查 ID 的缺口，新增索引后用核心断言验证负责人可读本任务、其他成员不可见别人的检查；真实成员复核待补。不得将最终提出验收请求当作检查证据查询已成功。
+
+`a272a31` 修复后的实际 Grok 负责人已通过当前 task_read.checks 发现记录并成功 check_read，4 次工具调用、零错误，核对原独立检查 19/19；原验收请求和任务不变。见 `check-index-proof-result-20261004.json`，服务已停止；该可发现性缺口已复核。
