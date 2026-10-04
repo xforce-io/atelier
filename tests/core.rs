@@ -4479,6 +4479,29 @@ fn direct_handoff_waits_for_artifact_fix_and_acceptance_does_not_finish_verifica
         "queued"
     );
     let (verify, bound) = f.claim_handoff(&id, &configuration);
+    for (call, input) in [
+        (
+            "wrong-recipient",
+            json!({"id":id,"revision":1,"accept":true,"reason":"不能改收件人","recipient":f.human}),
+        ),
+        (
+            "stale-revision",
+            json!({"id":id,"revision":0,"accept":true,"reason":"不能用旧交接版本"}),
+        ),
+    ] {
+        let denied = f
+            .store
+            .member_call(
+                &bound,
+                &member_operation(&verify, call, "handoff_respond", input),
+            )
+            .unwrap();
+        assert_eq!(denied["ok"], false, "{denied}");
+        let unchanged = f.store.handoff(&id).unwrap();
+        assert_eq!(unchanged.state, "offered");
+        assert_eq!(unchanged.revision, 1);
+        assert_eq!(unchanged.receiver, verify.worker_id);
+    }
     let accept = member_operation(
         &verify,
         "accept",

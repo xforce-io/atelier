@@ -2,7 +2,7 @@
 
 日期：2026-10-04。模式：end-to-end；当前阶段：implementation / verify；状态：进行中，未完成全量验收、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结最终验收候选。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
 
-当前依据为 L1 v0.10 / L2 v0.23，检查点 `0d93df9` 的 CI 已通过（158 项 Rust、58 项 TypeScript、格式与 Clippy；13 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **47 项齐备、11 项仍待补分支或核对**，不代表 Story 全量通过。最新报告任务的 HTTP 402 已在用户充值后恢复；原上下文续接仍触发 milkie #273 的空 assistant 消息 HTTP 400，详见末节。
+当前依据为 L1 v0.10 / L2 v0.23，检查点 `0d93df9` 的 CI 已通过（158 项 Rust、58 项 TypeScript、格式与 Clippy；13 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **50 项齐备、8 项仍待补分支或核对**，不代表 Story 全量通过。最新报告任务的 HTTP 402 已在用户充值后恢复；原上下文续接仍触发 milkie #273 的空 assistant 消息 HTTP 400，详见末节。
 
 以下保留各阶段历史检查点，其中“未实现”“未验证”和测试数量均属于对应阶段；当前状态以最新日期记录为准。
 
@@ -772,3 +772,16 @@ L1 reuse v0.10、L2 reuse v0.23；仅补测试与证据，产品行为不变。�
 恢复后的三次 Run 均 resume=true，却再次 MODEL_BAD_RESPONSE；无新增业务工具操作。对原始失败 checkpoint 的内存副本作无业务副作用诊断，提供商明确返回 `400 Invalid assistant message: content or tool_calls must be set`，与 milkie #273 一致。诊断中的合成结束只终止诊断，不代表业务恢复成功；未改原始 checkpoint、未重置 Task，也未本地修改 milkie。全部六次新旧 Run 已核对停止，服务 stopped/activeRuns=0，四条人类结果或待办保留。证据 `skill-report-funded-recovery-20261004.json`、`report-funded-resume-diagnostic-20261004.jsonl`；S6.A2 仍未通过，上游 issue 已补此复现场景。
 
 另逐条核对此前真实 DeepSeek 游戏的启动前 Keychain 连接恢复：唯一 recovery `3b187ac2…` 经正式 retry/apply 后，原投递由原数字负责人处理为 handled，后续实际交付到人类待办；原主体、投递、正式请求及成功 Run 可查。结合实际 Pi Skill 的等待/失败落实/取消和核心撤权唯一通知、不自动扩权断言，S5.A13 开发证据齐备，累计47/58。证据 `leader-connection-recovery-audit-20261004.json`；它只证明启动前连接恢复，原生失败 checkpoint 恢复仍为 false，两者不混用。
+
+
+## 2026-10-04：真实 Skill 的人类团队负责人检验与返工
+
+沿用 L1 v0.10 / L2 v0.23，本人作为新 Team 的团队负责人，既有 Pi 执行、Grok 独立检验；该团队不授予执行者直接交接权。实际 Pi 0.85.1 / openai-codex gpt-5.6-sol 宿主加载产品 Skill，以56次工具调用完成组队、创建 Task `3bd9beb5…`、明确承接和遗留基线执行安排。两个预期的初始 request show 不存在错误保留，均未重复提交。不是宿主冒充数字团队负责人；本次本人确实持有冻结职责和 Arrange 授权。
+
+Pi 初轮只固定原始基线，产出 `d0a72a00…` 的文件与预先固定输入完全相同。Skill 代表本人合法 task verify，Grok 独立检验 `13b45fa3…` 得到15 pass/4 fail。Skill 引用该真实失败安排一次 rework，Pi 续接原执行上下文修复并提交 `9fca3e47…`；Skill 再次 task verify，Grok 在独立检验上下文续接并取得 `61ddf400…` 的19/19。请求账本确认两次送检、一次返工及承接/执行均由本人发起；数字成员没有代安排或验收。四次 Run 全停止，服务 stopped/activeRuns=0，宿主 PID 76819 以0退出且不存在。Task 保持 active，无人类验收决定，也未发起验收请求。
+
+证据 `skill-human-leader-result-20261004.json`、`skill-human-leader-observations-20261004.jsonl`。结合此前非负责人八次真实 Skill forbidden，S7.A5 开发证据齐备。另在服务停止后，经产品 Skill describe 和真实 CLI 对旧产出再次送检，核心 conflict 拒绝且前后 Task 完全一致，证据 `old-artifact-handoff-rejected-20261004.json`。新增核心断言拒绝修改接收者参数或使用旧交接修订，handoff 仍 offered/revision1/原 receiver；结合固定前、无权、重复、跨Task和partial拒绝，S3.A7 开发证据齐备。158 项 Rust、Clippy、格式通过，日志 `rust-handoff-boundaries-20261004.log`、`clippy-handoff-boundaries-20261004.log`。
+
+当前镜像适用性另已核对：Pi 和 Grok 执行/检验成员使用 `sha256:f2a0d78b…`；真实生产容器启动器的本轮协议替身测试通过，Docker 层摘要确认该替身仅派生于同一冻结基础镜像。只读、非root、限定挂载/网络/资源与归属断言均通过。旧的直接出站及显式上游网络测试所记录代理源码摘要与当前文件逐个相同。将这些隔离组件证据与真实成员专用登录、执行、续接分开关联，不能把替身称为原生模型。旧 Grok 协调者的冻结镜像保留，未声称重建了所有旧配置。证据 `native-isolation-applicability-20261004.json`、`cli-container-eeb57acb-c9a5-417d-8f3f-f9fc880b7f69.json`；S1.A16 开发证据齐备。
+
+逐项开发证据现为50/58。剩余 S6.A2、S4.A2/A3/A4/A7、S5.A1/A2、S7.A3；真实人类拒绝后新版接受、过期/无效验收入口、失败/取消/多任务证据，以及 milkie #273 的原失败上下文恢复仍须完成，独立审查与合入尚未进行。

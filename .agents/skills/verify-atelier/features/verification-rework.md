@@ -40,3 +40,6 @@ L2 v0.23：负责人从 task_read.checks 或检验结果通知的 checkRecordId 
 
 
 2026-10-04：S3.A4 显式运行真实 Docker：含未完成项、报告后异常退出和报告后耗尽120秒时限，均 inconclusive 且资源停止；部分内容不产生独立通过，另有 inconclusive 验收请求拒绝断言。证据 check-inconclusive-f2c9b43f-86a5-437a-bcf9-4a7f33f2f6a4.json。成员及可信检查为 fixture，未冒充真实模型验收。
+
+
+2026-10-04：S3.A7 真实人类负责人两次送检与返工已完成。新产出后旧产出再次送检被实际CLI拒绝，Task不变；新增核心断言拒绝错误recipient参数/旧交接修订并保持记录。结合既有直接交接及固定前、无权、重复、跨Task/partial拒绝，开发证据齐备。
