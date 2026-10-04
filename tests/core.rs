@@ -2038,6 +2038,90 @@ fn member_operation(
 }
 
 #[test]
+fn shared_worker_configuration_does_not_transfer_authority_between_teams() {
+    let mut f = Fixture::new(true);
+    let configuration = f.prepare_digital_leader();
+    let mut team = f.team.clone();
+    team.name = "相同成员的另一个团队".into();
+    team.grants.clear();
+    let other = f
+        .store
+        .execute("other-team", &Command::TeamCreate { team })
+        .unwrap();
+    let other_id = other["id"].as_str().unwrap();
+    let second = f
+        .store
+        .execute(
+            "other-task",
+            &Command::TaskCreate {
+                team_id: other_id.into(),
+                goal: "不能借用原团队的授权".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(second["delivery"]["status"], "queued");
+    let task_id = second["task"]["id"].as_str().unwrap();
+    assert_eq!(
+        f.store.task(task_id).unwrap().worker_snapshots[&f.team.leader]
+            .execution_config
+            .as_deref(),
+        Some(configuration.as_str())
+    );
+    assert!(
+        !f.store
+            .team(other_id)
+            .unwrap()
+            .grants
+            .contains_key(&f.team.leader)
+    );
+    assert!(
+        f.store.team(&f.team.id).unwrap().grants[&f.team.leader].contains(&Permission::Arrange)
+    );
+    f.store.runtime_register("service", 123).unwrap();
+    assert!(matches!(
+        f.store.runtime_claim(
+            "service",
+            second["delivery"]["deliveryId"].as_str().unwrap(),
+            &configuration
+        ),
+        Err(Error::Forbidden(_))
+    ));
+    assert_eq!(f.store.task(task_id).unwrap().runs_used, 0);
+    let first = f.create();
+    let run = f
+        .store
+        .runtime_claim(
+            "service",
+            first["delivery"]["deliveryId"].as_str().unwrap(),
+            &configuration,
+        )
+        .unwrap();
+    assert_eq!(run.worker_id, f.team.leader);
+    assert_eq!(f.store.task(task_id).unwrap().runs_used, 0);
+    let a = f
+        .store
+        .runtime_context(
+            "service",
+            &run.task_id,
+            &run.worker_id,
+            &configuration,
+            "coordinate",
+        )
+        .unwrap();
+    let b = f
+        .store
+        .runtime_context(
+            "service",
+            task_id,
+            &run.worker_id,
+            &configuration,
+            "coordinate",
+        )
+        .unwrap();
+    assert_ne!(a.id, b.id, "同成员和配置也不能跨任务共用上下文");
+}
+
+#[test]
 fn member_binding_supplies_identity_and_rejects_management_or_cross_task_parameters() {
     let mut f = Fixture::new(true);
     let (run, binding) = f.running_member();
@@ -5174,6 +5258,73 @@ async fn real_docker_revocation_stops_inflight_check_without_publishing_success(
     std::fs::write(&evidence, serde_json::to_vec_pretty(&json!({"scope":"real Docker and core; fixture member, no model","checkBeforeRevoke":check,"checkAfterRevoke":observed,"artifact":artifact,"run":f.store.run(&run.id).unwrap()})).unwrap()).unwrap();
     println!("Check revocation evidence: {}", evidence.display());
     database.close().await.unwrap();
+}
+
+#[test]
+#[ignore = "requires immutable Docker image; explicitly exercises the 120 second check budget"]
+fn real_docker_partial_error_and_time_budget_never_publish_pass() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".agents/verify-runs/1");
+    std::fs::create_dir_all(&root).unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let mut evidence = Vec::new();
+    for (name, status, tail) in [
+        ("unfinished-item", "skip", ""),
+        ("runtime-error", "pass", "process.exitCode=2;"),
+        (
+            "partial-report-before-timeout",
+            "pass",
+            "setInterval(()=>{},1000);",
+        ),
+    ] {
+        let dir = tempfile::Builder::new()
+            .prefix("core-inconclusive-")
+            .tempdir_in(&root)
+            .unwrap();
+        let mut f = Fixture::in_directory(false, dir);
+        let (run, _) = f.prepare_code_execution_with_profile(atelier::profile::VerificationProfile {
+            name: format!("确定性检查异常：{name}"), check_id: "inconclusive-fixture".into(),
+            image: CLI_RESOURCE_IMAGE.into(),
+            argv: vec!["node".into(), "-e".into(), format!("console.log(JSON.stringify({{checkId:'inconclusive-fixture',results:[{{name:'first',status:'pass'}},{{name:'remaining',status:'{status}'}}]}}));{tail}")],
+        });
+        runtime.block_on(async {
+            let database = Database::open(f.dir.path().into(), 8).await.unwrap();
+            let client = database.client();
+            client.runtime_prepare_candidate("service".into(), run.id.clone()).await.unwrap();
+            f.store.runtime_begin_launch("service", &run.id).unwrap();
+            let run = f.store.runtime_child_started("service", &run.id, 321, "fixture inconclusive member").unwrap();
+            let binding = f.store.bind_member("service", &run.id).unwrap();
+            let begun = std::time::Instant::now();
+            let result = client.member_call(binding, member_operation(&run, "check", "run_check", json!({"checkId":"inconclusive-fixture"}))).await.unwrap();
+            assert_eq!(result["ok"], true, "{result}");
+            let check = &result["data"]["check"];
+            assert_eq!(check["state"], "finished");
+            assert_eq!(check["conclusion"], "inconclusive", "{name}: {check}");
+            assert_eq!(check["resources_stopped"], true);
+            assert!(check["stdout"]["size"].as_u64().unwrap() > 0, "部分报告确实已输出");
+            if name == "partial-report-before-timeout" {
+                assert!(begun.elapsed() >= Duration::from_secs(120));
+                assert!(check["diagnostic"].is_string());
+            }
+            let artifact = client.runtime_fix_artifact("service".into(), run.id.clone(), "fixture model stopped after check completion".into()).await.unwrap();
+            assert!(artifact.partial);
+            assert_eq!(f.store.task(&run.task_id).unwrap().current_artifact.as_deref(), Some(artifact.id.as_str()));
+            assert!(f.store.execute("partial-cannot-verify", &Command::TaskVerify {
+                verification_id: None, blocker_id: None, id: run.task_id.clone(),
+                revision: run.task_revision, artifact_id: artifact.id.clone(),
+                instruction: "部分内容不得冒充可验收交付".into(),
+            }).is_err());
+            let db = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3")).unwrap();
+            assert_eq!(db.query_row("SELECT count(*) FROM verifications WHERE task_id=?1", [&run.task_id], |r| r.get::<_,u64>(0)).unwrap(), 0);
+            evidence.push(json!({"case":name,"elapsedSeconds":begun.elapsed().as_secs_f64(),"check":check,"run":f.store.run(&run.id).unwrap()}));
+            database.close().await.unwrap();
+        });
+    }
+    let path = root.join(format!("check-inconclusive-{}.json", uuid::Uuid::new_v4()));
+    std::fs::write(&path, serde_json::to_vec_pretty(&json!({"scope":"real Docker; synthetic trusted profiles and member, no model","cases":evidence})).unwrap()).unwrap();
+    println!("Inconclusive check evidence: {}", path.display());
 }
 
 #[test]

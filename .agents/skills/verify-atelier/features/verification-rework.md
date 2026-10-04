@@ -37,3 +37,6 @@ CLI 和产品 Atelier Skill 分别验证；需要真实成员的路径不可用 
 L2 v0.23：负责人从 task_read.checks 或检验结果通知的 checkRecordId 取得 check_read.id；冻结 verificationProfile.checkId 仅是 run_check 的名称。真实空输入恢复暴露负责人猜测检查 ID 的缺口，新增索引后用核心断言验证负责人可读本任务、其他成员不可见别人的检查；真实成员复核待补。不得将最终提出验收请求当作检查证据查询已成功。
 
 `a272a31` 修复后的实际 Grok 负责人已通过当前 task_read.checks 发现记录并成功 check_read，4 次工具调用、零错误，核对原独立检查 19/19；原验收请求和任务不变。见 `check-index-proof-result-20261004.json`，服务已停止；该可发现性缺口已复核。
+
+
+2026-10-04：S3.A4 显式运行真实 Docker：含未完成项、报告后异常退出和报告后耗尽120秒时限，均 inconclusive 且资源停止；部分内容不产生独立通过，另有 inconclusive 验收请求拒绝断言。证据 check-inconclusive-f2c9b43f-86a5-437a-bcf9-4a7f33f2f6a4.json。成员及可信检查为 fixture，未冒充真实模型验收。

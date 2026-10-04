@@ -56,3 +56,6 @@ S5.A10 补充确定性文件竞态与真实 Docker：文件授权规划后、清
 S5.A12 补充已受理 rework 原样 retry 拒绝与返工计数不变，结合既有承接提交后丢终态、终局仅核对、execute 不重试、旧 epoch 拒绝及原始账本，开发证据齐备。155 项 Rust 回归见 `rust-queue-boundaries-20261004.log`；这不意味着 milkie 原生 API 失败上下文续接问题已修复。
 
 S5.A11 实际 Pi/Grok 无产出阻塞演练已完成：首执行 Run 查询空输入、正式报告、停止且零产出；负责人解决后一次 rework 实现，独立检查 19/19，人类待办 open，12 Run 全停止。证据 `skill-empty-blocker-result-20261004.json`；与真实检验阻塞恢复、预算和提前继续拒绝断言合并，开发证据齐备，无本次人类决定。
+
+
+2026-10-04：S5.A4/A9 本轮补齐实际 Keychain/CLI/Node 服务崩溃和核对，以及文本/JSON 的长输入、空列表、失败、缺参输出。未知资源由实际 reconcile 与核心断言单独证明，不用 not_found 代替。证据 keychain-runtime-20261004.log、cli-output-protocol-20261004.json；原 API 失败 checkpoint 问题仍保留，完整 S5 未验收。
