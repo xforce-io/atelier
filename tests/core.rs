@@ -8897,6 +8897,241 @@ fn acceptance_rejection_is_atomic_and_requires_new_artifact_before_another_reque
     assert_eq!(rework["budget"]["reworksReserved"], 1);
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn artifact_publication_atomically_supersedes_old_acceptance_requests_and_deliveries() {
+    for delivery_status in ["queued", "blocked"] {
+        let mut f = Fixture::new(false);
+        let (verifier, verification) = f.acceptance_fixture();
+        f.store
+            .runtime_run_observed_stopped("service", &verifier.id, "fixture stopped")
+            .unwrap();
+        let original = f.acceptance_request(&verification);
+        let rejection = f
+            .store
+            .execute(
+                "fixture-reject",
+                &acceptance_decide(&verification, &original, false),
+            )
+            .unwrap();
+        let task = f.store.task(&verification.task_id).unwrap();
+        let arranged = f
+            .store
+            .execute(
+                "fixture-rework",
+                &Command::TaskRework {
+                    id: task.id.clone(),
+                    revision: task.revision,
+                    reason: atelier::rework::ReworkReason::Rejection {
+                        id: original["decision"]["id"].as_str().unwrap().into(),
+                    },
+                    instruction: "合成返工：修改文件以形成新版；不代表真实人类决定".into(),
+                },
+            )
+            .unwrap();
+        let executor = task.team_snapshot.executor.as_deref().unwrap();
+        let config = task.worker_snapshots[executor]
+            .execution_config
+            .as_deref()
+            .unwrap();
+        let run = f
+            .store
+            .runtime_claim(
+                "service",
+                arranged["delivery"]["deliveryId"].as_str().unwrap(),
+                config,
+            )
+            .unwrap();
+        let database = Database::open(f.dir.path().into(), 8).await.unwrap();
+        let client = database.client();
+        client
+            .runtime_prepare_candidate("service".into(), run.id.clone())
+            .await
+            .unwrap();
+        f.store.runtime_begin_launch("service", &run.id).unwrap();
+        let run = f
+            .store
+            .runtime_child_started("service", &run.id, 321, "fixture-rework")
+            .unwrap();
+        let binding = f.store.bind_member("service", &run.id).unwrap();
+        let written = client
+            .member_call(
+                binding.clone(),
+                member_operation(
+                    &run,
+                    "write",
+                    "write_file",
+                    json!({"path":"index.html","content":"<h1>synthetic revised candidate</h1>"}),
+                ),
+            )
+            .await
+            .unwrap();
+        assert_eq!(written["ok"], true, "{written}");
+        let submitted = f
+            .store
+            .member_call(
+                &binding,
+                &member_operation(
+                    &run,
+                    "submit",
+                    "artifact_submit",
+                    json!({"summary":"合成新版，用于发布事务验证"}),
+                ),
+            )
+            .unwrap();
+        assert_eq!(submitted["ok"], true, "{submitted}");
+
+        // Legal rework requires a prior rejection. Inject delayed open copies only here,
+        // without rewriting that durable rejection, to exercise defensive publication.
+        let sql = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3")).unwrap();
+        let mut injected = Vec::new();
+        {
+            let status = delivery_status;
+            let mut request: DecisionRequest =
+                serde_json::from_value(original["decision"].clone()).unwrap();
+            request.id = format!("fixture-delayed-acceptance-{status}");
+            request.request_delivery = format!("fixture-delayed-delivery-{status}");
+            request.question = "测试注入的乱序旧请求，不是实际交付待办".into();
+            let message = format!("fixture-delayed-message-{status}");
+            sql.execute("INSERT INTO messages(id,task_id,sender,source,recipient,task_revision,kind,body,causation_id) VALUES(?1,?2,NULL,'core',?3,?4,'decision.request',?5,'fixture-out-of-order')", rusqlite::params![message,task.id,request.handler,task.revision,serde_json::to_string(&request).unwrap()]).unwrap();
+            sql.execute(
+                "INSERT INTO deliveries(id,message_id,receiver,status) VALUES(?1,?2,?3,?4)",
+                rusqlite::params![request.request_delivery, message, request.handler, status],
+            )
+            .unwrap();
+            sql.execute(
+                "INSERT INTO decisions(id,task_id,data) VALUES(?1,?2,?3)",
+                rusqlite::params![
+                    request.id,
+                    task.id,
+                    serde_json::to_string(&request).unwrap()
+                ],
+            )
+            .unwrap();
+            injected.push(request);
+        }
+        let before = f.store.task(&task.id).unwrap();
+        sql.execute_batch("CREATE TRIGGER fail_old_acceptance_delivery BEFORE UPDATE ON deliveries WHEN OLD.id LIKE 'fixture-delayed-delivery-%' BEGIN SELECT RAISE(ABORT,'fixture publication failure'); END;").unwrap();
+        let fixed = f
+            .store
+            .runtime_prepare_artifact("service", &run.id)
+            .unwrap()
+            .fix()
+            .unwrap();
+        assert!(
+            f.store
+                .runtime_publish_artifact("service", fixed, "fixture stopped")
+                .is_err()
+        );
+        assert_eq!(
+            serde_json::to_value(f.store.task(&task.id).unwrap()).unwrap(),
+            serde_json::to_value(&before).unwrap()
+        );
+        assert_eq!(f.store.run(&run.id).unwrap().state, "running");
+        assert_eq!(
+            sql.query_row(
+                "SELECT count(*) FROM artifacts WHERE run_id=?1",
+                [&run.id],
+                |r| r.get::<_, u64>(0)
+            )
+            .unwrap(),
+            0
+        );
+        for request in &injected {
+            assert_eq!(f.store.decision(&request.id).unwrap().state, "open");
+            assert_eq!(
+                sql.query_row(
+                    "SELECT revision FROM deliveries WHERE id=?1",
+                    [&request.request_delivery],
+                    |r| r.get::<_, u64>(0)
+                )
+                .unwrap(),
+                1
+            );
+        }
+        sql.execute_batch("DROP TRIGGER fail_old_acceptance_delivery;")
+            .unwrap();
+        let artifact = f.fix_run(&run);
+        assert_ne!(artifact.id, verification.artifact_id);
+        let after = f.store.task(&task.id).unwrap();
+        assert_eq!(
+            after.current_artifact.as_deref(),
+            Some(artifact.id.as_str())
+        );
+        assert_eq!(after.state, "active");
+        assert!(after.outcome.is_none());
+        assert!(f.store.artifact(&verification.artifact_id).is_ok());
+        assert_eq!(f.store.run(&run.id).unwrap().state, "stopped");
+        assert_eq!(
+            f.store
+                .decision(original["decision"]["id"].as_str().unwrap())
+                .unwrap()
+                .state,
+            "rejected"
+        );
+        assert_eq!(
+            serde_json::to_value(
+                f.store
+                    .acceptance_decision(original["decision"]["id"].as_str().unwrap())
+                    .unwrap()
+            )
+            .unwrap(),
+            rejection["acceptance"]
+        );
+        for (index, request) in injected.iter().enumerate() {
+            let stale = f.store.decision(&request.id).unwrap();
+            assert_eq!(stale.state, "superseded");
+            assert_eq!(stale.revision, 2);
+            assert_eq!(
+                stale.reason.as_deref(),
+                Some("产出版本已更新，旧验收请求失效")
+            );
+            let delivery: (String, u64) = sql
+                .query_row(
+                    "SELECT status,revision FROM deliveries WHERE id=?1",
+                    [&request.request_delivery],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(delivery, ("cancelled".into(), 2));
+            let command = Command::AcceptanceDecide {
+                task_id: task.id.clone(),
+                revision: after.revision,
+                request_id: stale.id,
+                request_revision: stale.revision,
+                accept: true,
+                reason: "隔离测试：旧请求不得接受新产出".into(),
+                decision_ref: Some("synthetic-negative-test-only".into()),
+            };
+            assert!(matches!(
+                f.store
+                    .execute(&format!("stale-negative-{index}"), &command),
+                Err(Error::Conflict(_))
+            ));
+            assert!(f.store.acceptance_decision(&request.id).is_err());
+        }
+        assert_eq!(
+            serde_json::to_value(f.store.task(&task.id).unwrap()).unwrap(),
+            serde_json::to_value(&after).unwrap()
+        );
+
+        database.close().await.unwrap();
+        // Opt-in retention for real CLI/Skill negative driving; default regression cleans up.
+        if let Some(destination) = std::env::var_os("ATELIER_STALE_ACCEPTANCE_EVIDENCE") {
+            let metadata = json!({"syntheticFixture":true,"actualHumanDecision":false,"scope":"production artifact publication with injected out-of-order old requests; synthetic verification/resources","workspace":f.dir.path(),"task":after,"oldArtifact":verification.artifact_id,"newArtifact":artifact.id,"oldRequests":injected,"originalRejection":rejection,"publicationRollback":true});
+            let destination = std::path::PathBuf::from(destination);
+            std::fs::create_dir_all(&destination).unwrap();
+            std::fs::write(
+                destination.join(format!("{delivery_status}.json")),
+                serde_json::to_vec_pretty(&metadata).unwrap(),
+            )
+            .unwrap();
+            drop(sql);
+            drop(f.store);
+            let _ = f.dir.keep();
+        }
+    }
+}
+
 #[test]
 fn acceptance_rechecks_current_permission_and_cancellation_supersedes_open_request() {
     let mut f = Fixture::new(false);

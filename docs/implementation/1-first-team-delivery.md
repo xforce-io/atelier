@@ -2,7 +2,7 @@
 
 日期：2026-10-04。模式：end-to-end；当前阶段：implementation / verify；状态：进行中，未完成全量验收、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结最终验收候选。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
 
-当前依据为 L1 v0.10 / L2 v0.23，检查点 `47fee60` 的 CI 已通过（158 项 Rust、58 项 TypeScript、格式与 Clippy；13 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **54 项齐备、4 项仍待补分支或核对**，不代表 Story 全量通过。最新报告任务的 HTTP 402 已在用户充值后恢复；原上下文续接仍触发 milkie #273 的空 assistant 消息 HTTP 400，详见末节。
+当前依据为 L1 v0.10 / L2 v0.23，检查点 `1987206` 的 CI 已通过（158 项 Rust、58 项 TypeScript、格式与 Clippy；13 项环境测试默认 ignored）；新增产出发布事务回归后本地159项Rust、格式与Clippy通过，当前提交CI仍需核对。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **55 项齐备、3 项仍待补分支或核对**，不代表 Story 全量通过。最新报告任务的 HTTP 402 已在用户充值后恢复；原上下文续接仍触发 milkie #273 的空 assistant 消息 HTTP 400，详见末节。
 
 以下保留各阶段历史检查点，其中“未实现”“未验证”和测试数量均属于对应阶段；当前状态以最新日期记录为准。
 
@@ -816,3 +816,13 @@ S4.A4开发证据齐备，逐项为53/58，剩余 S6.A2、S4.A2/A3/A7、S5.A2。
 证据 `skill-active-cancel-result-20261004.json`、`active-cancel-observations-20261004.jsonl`、`direct-active-cancel-result-20261004.json`、`skill-unknown-cancel-result-20261004.json`、`direct-unknown-cancel-result-20261004.json`、`cancel-fixture-cleanup-20261004.json`。原始观察程序启动时误读尚未创建的runtime行，已修正空状态处理；没有重启宿主或任务。副本设置脚本也已修正对tasks冗余revision列的误设，失败事务未提交，最终副本注入单独标明。
 
 S5.A2开发证据齐备，逐项为54/58。剩余 S6.A2、S4.A2/A3/A7。当前代码检查点 `47fee60` 的 [CI 37192223530](https://github.com/xforce-io/atelier/actions/runs/37192223530) 成功；本轮仅驾驶与文档核对，未改产品代码，不重复全量测试。真实人类拒绝后新版验收、过期交付交互及milkie #273原失败上下文恢复仍需完成，独立审查、PR与合入未进行。
+
+## 2026-10-04：新产出发布与旧验收请求失效
+
+S4.A3沿实际产出发布路径补证。正常契约不允许open验收期间开始返工；测试先通过合成拒绝安排返工，再分别在两个独立工作区注入一条针对旧产出的乱序open请求及queued/blocked投递，不改写历史拒绝。候选准备、成员文件写入/提交、新产出固定与发布均走生产入口；检验通过、拒绝及资源停止观察明确为fixture，未称真实人类决定或真实模型执行。
+
+新增Integration `artifact_publication_atomically_supersedes_old_acceptance_requests_and_deliveries` 在旧投递更新处注入SQLite失败：新产出记录/当前引用、Run、请求与投递整体回滚，移除故障后成功重试。新产出成为current，旧请求superseded/revision=2、投递cancelled/revision=2且保存失效原因；历史产出和拒绝记录不变。默认测试清理临时工作区，显式证据环境变量才保留隔离数据供入口驾驶。
+
+直接CLI与实际Pi 0.85.1 / openai-codex gpt-5.6-sol产品Skill宿主分别尝试两个旧请求的旧修订号和当前修订号，合计8次accept均conflict。Skill实际读取安装包并完成22次工具调用；无任务/产出/请求变更，无旧请求验收记录或接受结局，换requestId与请求修订不能绕过superseded。宿主PID 10221已正常退出；未启动服务，所有fixture Run记录stopped。`task decision list`保留历史，按state判断待办，不以旧记录仍可查询推定仍待决定。
+
+证据 `stale-acceptance-result-20261004.json` 保留两组状态、真实入口与脱敏调用、发布回滚断言和fixture边界；初次脚本将Task结构与包含附加查询字段的task show直接比对失败，已纠正为同入口前后比对，无业务变更。常规159项Rust、格式与Clippy通过，13项环境测试仍默认ignored；此前 [CI 37192893714](https://github.com/xforce-io/atelier/actions/runs/37192893714) 成功。逐项开发证据为55/58，剩余S6.A2、S4.A2/A7。此处负向测试不替代真实人类拒绝后新版接受、Skill实际人类过期决定；完整验收、独立审查、PR与合入均未完成。

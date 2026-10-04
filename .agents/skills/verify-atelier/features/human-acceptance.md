@@ -36,3 +36,5 @@ S4.A5 的撤权、数字负责人尝试 acceptance_decide、成员伪造 actor/�
 
 
 2026-10-04：S4.A4补齐实际Skill负向入口。三个隔离副本注入missing/fail/inconclusive，CLI与实际Pi宿主合计12次accept均拒绝，普通消息和新requestId不能绕过，Task/request不变且零验收记录；原工作区未变。证据 invalid-acceptance-skill-result-20261004.json。副本测试不计真实人类决定；原宿主错误查询保留，已用正确请求ID核对。验收记录查询用 `task acceptance show <请求ID>`，待决定事项用 `task decision show <请求ID>` 或 `task decision list --task <TaskID>`。
+
+2026-10-04：S4.A3补齐生产产出发布和实际CLI/Skill旧请求拒绝。合法合成返工期间，分别注入针对旧产出的乱序open请求及queued/blocked投递；发布事务失败全部回滚，重试后新产出current、旧请求superseded且投递cancelled，历史拒绝保留。直接CLI与实际Pi Skill合计8次负向accept均conflict，换ID和使用旧请求的当前revision仍不能接受新版，任务/请求不变。证据 stale-acceptance-result-20261004.json。明确fixture不计S4.A2/A7真实人类拒绝或过期决定；decision list含历史，须按state区分待办。
