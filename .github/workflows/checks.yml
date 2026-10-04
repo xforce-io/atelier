@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: xforce-io/milkie
-          ref: e049f0b12479b07456e9c10acd709579ca3cd47f
+          ref: da7767790bcb38e30aa49910ad05fba3670689ca
           path: .ci/milkie
           persist-credentials: false
       - name: 准备 Node

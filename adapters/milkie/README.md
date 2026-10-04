@@ -4,7 +4,7 @@
 
 ## 固定依赖
 
-使用 milkie 已合入版本 `e049f0b12479b07456e9c10acd709579ca3cd47f`。该提交已有 AgentRuntime 内置工具白名单、稳定 toolCallId、Run 控制和原生 checkpoint。NPM 的 `@freemanxu/milkie@0.1.1` 包早于这些能力，不能以相同版本号当作兼容版本。
+使用 milkie 修复提交 `da7767790bcb38e30aa49910ad05fba3670689ca`（`feat/273-empty-assistant-resume`，尚未合入主分支）。本次增加失败 checkpoint 续接的空 assistant 请求投影修复，checkpoint 格式与有效历史不变。该提交已有 AgentRuntime 内置工具白名单、稳定 toolCallId、Run 控制和原生 checkpoint。NPM 的 `@freemanxu/milkie@0.1.1` 包早于这些能力，不能以相同版本号当作兼容版本。
 
 准备一个包含该提交的 milkie Git 仓库，在本目录运行：
 
@@ -19,6 +19,8 @@ npm test
 已在 macOS、Node 23.11.0 / npm 10.9.2 下连续构建两次，包 SHA-256 均为 `6a4de9e52702ebc2b511b68af810743637d29817b17fa41090f7186267a88eec`；原始来源记录保存在 vendor/provenance.json。其他平台/工具链的构建与完整性需再验证。该本地源码包不是新的上游发行版本。
 
 2026-10-03 的干净 CI 发现官方 Node 与 Homebrew Node 对同一 tar 的 gzip 压缩结果不同，导致原 npm integrity 拒绝安装。当前准备脚本保持 npm 产出的 tar 原样，用无压缩 DEFLATE 统一 gzip 编码，同时记录包摘要和 tar 摘要；锁文件继续严格校验，不在 CI 动态改锁。固定 e049f0b 的 tar SHA-256 为 `03f8f60950ac5e071fe8bd42b766e044e476633aa8b802cfc96c2a76796e037d`，标准化包 SHA-256 为 `2f025c8d7f9f75d6f4e693d9e8088b469dd325cf5c8b95e6a4c38cc506e013a9`。这次只改变压缩编码，依赖文件内容不变。
+
+2026-10-04 固定修复提交 `da77677` 的 tar SHA-256 为 `cffb71e4ccec9b7590dbc0ff1081bd1775acef7df1c508d969980d4ffc6c761c`，标准化包 SHA-256 为 `1d1287006a2b7449daf05f3fef4c5ecb4e9de71dadeee9e8f1c92c4add28a820`；以上旧摘要仅保留历史，不用于当前锁文件。
 
 ## 执行边界
 

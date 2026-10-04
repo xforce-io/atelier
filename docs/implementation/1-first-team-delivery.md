@@ -873,3 +873,10 @@ DeepSeek 负责人读取反馈后未保存有效处理结果；正式恢复原�
 CLI请求42ceec28…已rejected/revision2、本人请求投递handled，Task e57d3790…仍active/revision3/current9153baee…。新拒绝结果形成独立投递f707abb1…；显式启动服务后，原负责人以原上下文resume=true处理此新消息，Run8385d2ee…再次MODEL_BAD_RESPONSE，零新业务操作。该消息blocked、恢复待办保存，未开始第二次返工；Task总Run为15/20、返工仍1/2，没有重置额度或上下文。服务已停止、全部Run确认停止。此新消息不是对旧受阻投递的盲目重试；后续仍须milkie #273修复。证据 `cli-second-human-rejection-observations-20261004.jsonl` 与上面的正式决定结果。
 
 开发证据现为56/58，剩余S6.A2（报告任务原失败上下文恢复）与S4.A2（两入口真实拒绝后新版接受：Skill已闭合，CLI未闭合）。项目产品代码未改，沿当前代码检查点2ba55b3的 [CI 37199214846](https://github.com/xforce-io/atelier/actions/runs/37199214846)：159项Rust、59项TypeScript、格式和Clippy通过；13项环境测试仍默认ignored。未完成全部必需验收、独立审查、PR或合入。
+
+
+## 2026-10-04：接入 milkie 空 assistant 续接修复
+
+沿用 L1 v0.10，L2 v0.25。用户提供的 milkie #273 三文件修复已核对、提交并推送为 `da7767790bcb38e30aa49910ad05fba3670689ca`（`feat/273-empty-assistant-resume`，尚未合入主分支）。仅请求投影省略空 assistant，失败 checkpoint、用户输入、有效回复与历史工具效果保留；无关未跟踪实验未提交、未打入依赖包。上游聚焦31项通过，src全量1106项通过、两项旧火山真实服务smoke失败单独保留；真实DeepSeek预算拒绝后原checkpoint续接完成、add调用1次、无空assistant。
+
+Atelier通过固定提交Git archive构建更新依赖、锁文件、通道握手与CI来源；59项TypeScript与159项Rust通过，13项环境测试默认ignored，格式和Clippy通过。连接诊断须按新接入提交重测，原任务、执行配置、凭据代次及额度不重置。CLI优先恢复当前第二次人类拒绝对应投递，保留旧失败反馈；原三个报告任务由实际产品Skill恢复。此处仅记录接入检查，尚未把原上下文业务恢复、人类新版验收或全量Story标为通过；当前逐项开发证据仍56/58，S6.A2与S4.A2待补。证据位于 `.agents/verify-runs/1/milkie-273-*`。

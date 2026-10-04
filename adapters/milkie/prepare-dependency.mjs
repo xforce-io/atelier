@@ -7,7 +7,7 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 
 // NPM 0.1.1 predates the required tool allowlist. Build an immutable committed
 // source snapshot; never build or alter a neighboring developer's dirty tree.
-const revision = 'e049f0b12479b07456e9c10acd709579ca3cd47f';
+const revision = 'da7767790bcb38e30aa49910ad05fba3670689ca';
 const root = dirname(fileURLToPath(import.meta.url));
 const source = process.argv[2];
 if (!source) throw new Error('用法：node prepare-dependency.mjs <milkie Git 仓库路径>');

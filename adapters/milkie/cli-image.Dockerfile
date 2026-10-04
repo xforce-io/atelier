@@ -11,5 +11,5 @@ RUN printf '%s  /usr/local/bin/grok\n' "$GROK_SHA256" | sha256sum -c - \
     && PI_CODING_AGENT_DIR=/tmp/pi-version pi --version \
     && rm -rf /tmp/grok-version /tmp/pi-version
 COPY dist/src/ ./dist/src/
-LABEL atelier.milkie="e049f0b12479b07456e9c10acd709579ca3cd47f" atelier.adapter.protocol="2"
+LABEL atelier.milkie="da7767790bcb38e30aa49910ad05fba3670689ca" atelier.adapter.protocol="2"
 ENTRYPOINT ["node", "/opt/atelier/adapter/dist/src/main.js"]
