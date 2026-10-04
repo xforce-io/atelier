@@ -906,3 +906,9 @@ CLI从最新第二次人类拒绝的原投递f707abb1恢复，原负责人953f4b
 当前生产镜像派生的实际Docker接线检查三项通过：受控工具/挂载/资源归属、Pi与Grok登录的TTY和代次/取消回收、服务投递及跨Run/Task会话/停服资源回收。SDK、核心、SQLite、Docker及私有通道为真实实现，CLI/登录响应明确为协议夹具，不是新账号或模型验收。来源`milkie-273-current-cli-image.json`、`milkie-273-cli-image-regression-summary.json`、三份原始cli-container/login/runtime记录及日志。
 
 对照L1 v0.10当前58个ID生成完整索引`acceptance-audit-milkie-273-20261004.json`，83份引用证据均存在并保存摘要，所有引用测试名称在当前源码可定位；JSON原始证据已读并生成目录，文件存在不单独证明语义通过。补入原报告恢复S6.A2及Skill新版决定S4.A7；开发证据仍57/58，S4.A2当前CLI请求0208ffae保持open待本人决定。Atelier独立审查和合入仍未执行，SDK升级相关真实模型证据与当前镜像接线证明的适用边界须在最终审查时一并核对。
+
+## 2026-10-04：CLI 第二次返工新版已接受，进入独立审查
+
+用户在当前新版 CLI 交付说明、README 链接和待验收请求之后明确回复“我 ok”。真实 CLI 核对 Task 修订3、请求0208ffae修订1及产出24a35b2f后，保存该次明确接受。随后独立查询：Task e57d3790为closed/accepted、修订4；请求0208ffae为accepted、修订2；正式验收绑定当前产出及独立检验71db1c82。第二次拒绝42ceec28仍为rejected；原20/20 Run和2/2返工额度没有重置，Skill已接受的交付没有再次提交决定。来源`milkie-273-cli-human-accepted-result.json`。
+
+S4.A2的CLI与Skill真实拒绝、返工和新版接受路径均已闭合。当前58个必需项的开发证据齐备，冻结索引见`acceptance-audit-ready-review-20261004.json`；这不表示已获独立审查或可以直接合入。原提交7e13ee6的CI 37204383347全部通过；本次仅追加验收记录，代码仍为60f9e88的依赖接入候选。原生模型证据与新固定镜像接线证明的版本边界保持，交给独立Reviewer核对。
