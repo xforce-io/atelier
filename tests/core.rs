@@ -2715,6 +2715,136 @@ fn ordinary_coordination_requires_a_real_reply_to_the_original_sender() {
     );
 }
 
+#[test]
+fn note_reply_loop_exhausts_persistent_budgets_without_losing_human_recovery() {
+    // Deterministic member-tool injection, not evidence of real model choices.
+    let mut f = Fixture::new(true);
+    let (mut run, mut binding) = f.running_member_with_contract(Some(ContractPatch {
+        max_runs: Some(4),
+        max_messages: Some(5),
+        ..Default::default()
+    }));
+    let mut reply_to: Option<Value> = None;
+    for turn in 0..4 {
+        let mut input =
+            json!({"recipient":run.worker_id,"kind":"work.note","body":"继续回复此说明"});
+        if let Some(id) = &reply_to {
+            input["replyTo"] = id.clone();
+        }
+        let op = member_operation(&run, &format!("note-{turn}"), "message_send", input);
+        let sent = f.store.member_call(&binding, &op).unwrap();
+        if turn == 3 {
+            assert_eq!(sent["ok"], false, "{sent}");
+            assert!(
+                sent["error"]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("消息额度耗尽")
+            );
+            break;
+        }
+        assert_eq!(sent["ok"], true, "{sent}");
+        let disposition = if turn == 0 {
+            json!({"kind":"wait","reason":"等待后续说明","handler":run.worker_id})
+        } else {
+            json!({"kind":"reply","messageId":sent["data"]["messageId"]})
+        };
+        let response = member_operation(&run, "handled", "message_respond", disposition);
+        assert_eq!(
+            f.store.member_call(&binding, &response).unwrap()["ok"],
+            true
+        );
+        f.store
+            .runtime_run_observed_stopped("service", &run.id, "fixture reply stopped")
+            .unwrap();
+        assert_eq!(
+            fixture_delivery(&f, &run.worker_id, &run.delivery_id)["status"],
+            "handled"
+        );
+        reply_to = Some(sent["data"]["messageId"].clone());
+        (run, binding) = f.claim_member_message(
+            sent["data"]["deliveryId"].as_str().unwrap(),
+            &run.configuration_id,
+        );
+    }
+    f.store
+        .runtime_run_observed_stopped(
+            "service",
+            &run.id,
+            "fixture stopped after message budget rejection",
+        )
+        .unwrap();
+    let before = f.store.task(&run.task_id).unwrap();
+    assert_eq!((before.runs_used, before.messages_used), (4, 5));
+    let human_mailbox = f.store.mailbox(Some(&f.human)).unwrap();
+    assert_eq!(human_mailbox.as_array().unwrap().len(), 1);
+    assert_eq!(human_mailbox[0]["message"]["kind"], "decision.request");
+    let leader_mailbox = f.store.mailbox(Some(&run.worker_id)).unwrap();
+    assert!(
+        !leader_mailbox
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["status"] == "queued")
+    );
+
+    drop(f.store);
+    f.store = Store::open(f.dir.path()).unwrap();
+    f.store.runtime_register("restarted-loop", 456).unwrap();
+    for attempt in 0..2 {
+        f.store
+            .runtime_run_observed_stopped(
+                "restarted-loop",
+                &run.id,
+                "fixture repeated stop observation",
+            )
+            .unwrap();
+        let error = f
+            .store
+            .execute(
+                &format!("new-note-{attempt}"),
+                &Command::MessageSend {
+                    task_id: run.task_id.clone(),
+                    recipient: run.worker_id.clone(),
+                    kind: "work.note".into(),
+                    body: "新的请求也不能重置额度".into(),
+                    reply_to: None,
+                },
+            )
+            .unwrap_err();
+        assert!(error.to_string().contains("消息额度耗尽"));
+    }
+    assert_eq!(f.store.mailbox(Some(&f.human)).unwrap(), human_mailbox);
+    assert_eq!(
+        f.store.mailbox(Some(&run.worker_id)).unwrap(),
+        leader_mailbox
+    );
+    let after = f.store.task(&run.task_id).unwrap();
+    assert_eq!((after.runs_used, after.messages_used), (4, 5));
+    assert_eq!(after.state, "pending");
+    assert_eq!(f.store.runtime_snapshot().unwrap()["activeRuns"], 0);
+    choose_recovery_retry(&mut f, &run.task_id);
+    let receipt = fixture_delivery(&f, &run.worker_id, &run.delivery_id);
+    let retry = Command::MailboxRetry {
+        id: run.delivery_id.clone(),
+        revision: receipt["revision"].as_u64().unwrap(),
+        reason: "fixture explicit retry after restart".into(),
+    };
+    for attempt in 0..2 {
+        let error = f
+            .store
+            .execute(&format!("retry-loop-{attempt}"), &retry)
+            .unwrap_err();
+        assert!(error.to_string().contains("Run"), "{error}");
+    }
+    assert_eq!(
+        fixture_delivery(&f, &run.worker_id, &run.delivery_id)["status"],
+        "blocked"
+    );
+    assert_eq!(f.store.task(&run.task_id).unwrap().runs_used, 4);
+    assert_eq!(f.store.task(&run.task_id).unwrap().messages_used, 5);
+}
+
 impl Fixture {
     fn claim_member_message(
         &mut self,

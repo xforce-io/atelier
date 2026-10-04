@@ -2,7 +2,7 @@
 
 日期：2026-10-04。模式：end-to-end；当前阶段：implementation / verify；状态：进行中，未完成全量验收、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结最终验收候选。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
 
-当前依据为 L1 v0.10 / L2 v0.21，代码检查点 `966725d` 的 CI 已通过（151 项 Rust、58 项 TypeScript、格式与 Clippy；11 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有证据；首个游戏已明确验收关闭，其余交付的决定分别保持待办。当前逐项开发证据审计为 **16 项齐备、42 项仍待补分支或核对**，不把尚未审计的条目解释为全部未运行，也不据此宣布任一 Story 全量通过。详见本文末节。
+当前依据为 L1 v0.10 / L2 v0.21，代码检查点 `966725d` 的 CI 已通过（151 项 Rust、58 项 TypeScript、格式与 Clippy；11 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有证据；首个游戏已明确验收关闭，其余交付的决定分别保持待办。当前逐项开发证据审计为 **26 项齐备、32 项仍待补分支或核对**，不把尚未审计的条目解释为全部未运行，也不据此宣布任一 Story 全量通过。详见本文末节。
 
 以下保留各阶段历史检查点，其中“未实现”“未验证”和测试数量均属于对应阶段；当前状态以最新日期记录为准。
 
@@ -658,3 +658,18 @@ Pi 执行 / Grok 检验任务 `54460c41…` 同样完成基线 `825e2e96…` 的
 
 
 同日另以新的 Pi 宿主模拟返回旧任务：从原创建 request ID 找回任务 `7c77a16a…`，区分原请求的 pending/queued 快照与当前 revision 3 的待验收事实，核对当前产出、独立检验与本人待办。19 次实际工具调用中，两次只读参数使用错误均保留，宿主查 help 后纠正；未重发目标或安排，未替本人决定，前后 Task/服务/收件箱/决定查询结果完全相同。证据 `skill-return-to-task-20261004.json`。此次只读取 Run 汇总，未逐个查询 Run，S5.A8 因此仍 pending，不把局部成功扩大成整项通过。S4.A6 的真实新旧/partial 导出与无覆盖、S5.A5 的三类事务故障及重试原子性，则已核对原始文件摘要和当前 CI 对应断言，计入上述 16 项。
+
+
+## 2026-10-04：普通决定闭环、宿主返回与持久预算
+
+L1 reuse v0.10、L2 reuse v0.21，产品契约不变。基于 `2d6ceb7` 补证并新增一个确定性 Integration，产品代码未改。152 项 Rust（14 Unit、19 CLI、119 core）通过，11 项环境测试默认 ignored；Clippy、格式与文本差异检查通过。TypeScript 未变，沿用 [CI 37136747536](https://github.com/xforce-io/atelier/actions/runs/37136747536) 的 58 项结果。完整候选尚待冻结与独立审查。
+
+直接 CLI 与真实 Pi 0.85.1 / openai-codex gpt-5.6-sol 分别验证普通补充/取舍：普通 work.note 和 mailbox respond 不能替代正式回应；回应后任务输入与权限不变；落实受阻保留原因；实际 task update 与 record 分开完成后才 resolved。另覆盖旧任务版本下回应被拒、非处理者回应被拒。Pi 首宿主中途 fetch failed，虽退出码为 0 仍按失败保存；新宿主从持久状态继续，未重复已完成写入。初次 CLI 测试的无效处理者前置及更换既有团队负责人被拒也原样保留，随后使用独立合法团队完成分支。全部为普通决定测试，没有代替用户接受游戏。证据 `cli-decision-flow-20261004.json`、`skill-decision-flow-20261004.json`。
+
+实际 CLI 创建时主动关闭响应读取端：事务已提交后输出发生 broken pipe，进程退出 101；新 CLI 仍能按原 request ID 查询，重复请求只返回一个 Task/初始投递。pending 更新后旧承接被拒，新投递记录 contract-update 因果。它证明“已提交但响应丢失”，不声称提交前杀进程也必然成功；事务故障回滚与并发另由 Integration 证明。证据 `cli-disconnected-create-20261004.json`。
+
+新 Pi 宿主执行 32 次实际工具调用，确认明确取消的初始化目录不存在，并按原 request ID 返回任务 `7c77a16a…`，查询冻结参与者收件箱及全部五个 Run。逐个 Run 均 stopped，原生结束、资源停止与消息处理结果分别可查；宿主区分历史 pending/queued 与当前 active/待验收。三次只读命令误用保留，最终以正确 decision 查询核对；前后 Task、runtime、decisions 完全相同，无重发和验收决定。证据 `skill-return-runs-20261004.json`，补齐先前 S5.A8 的逐 Run 查询缺口。
+
+新增 `note_reply_loop_exhausts_persistent_budgets_without_losing_human_recovery`：通过实际核心成员工具与 SQLite 注入 note/reply 循环，消耗 4 次 Run、5 条消息后，下一消息被额度拒绝；保存一份人工恢复事项。重开数据库并换服务实例，重复停止观测不增加通知，新消息和正式选择 retry 后的两次重试均不能重置预算；无 queued 成员投递、activeRuns=0。此为确定性边界测试，未调用真实模型，不代替真实团队成功链路。
+
+逐项审计新增齐备项：S1.A8、S6.A3/A4/A5、S2.A1/A7/A8、S3.A2、S5.A8、S7.A4。累计 26/58，剩余 32 项保留各自缺口；已有快照、权限、目录装配、返工预算测试已核对具体断言及通过日志，没有仅凭测试名称计数。原始记录保留于忽略的 `.agents/verify-runs/1/`，当前审计文件为 `acceptance-audit-20261003.json`。实际成员拒收/无产出阻塞、部分 Skill 异常与人类拒绝后新版接受仍未齐备；[milkie #273](https://github.com/xforce-io/milkie/issues/273) 的原失败 API 续接仍待修复。各当前游戏正式决定保留，未自动接受。

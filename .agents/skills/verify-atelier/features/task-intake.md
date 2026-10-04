@@ -21,3 +21,6 @@ CLI 和产品 Atelier Skill 分别验证；需要真实成员的路径不可用 
 数字员工 `task_intake` 与 `message_respond` 已有核心及管道集成测试：接受不结束协调责任，等待/拒绝与通知持久保存，处理结果与停止核对分离；代码输入校验走数据库线程之外的阻塞工作线程。当前调用由测试 fixture 选择，不是模型自主承接证据，S6 仍未完整验收。
 
 开发集成入口已尝试真实 API 澄清，当前连接返回 HTTP 400 / InvalidSubscription，未生成补充事项，失败保留为 blocked。此入口不是产品入口，不能替代本文件要求的 CLI/Skill 验收。
+
+
+2026-10-04 补证：`cli-decision-flow-20261004.json` 与 `skill-decision-flow-20261004.json` 记录直接 CLI 和实际 Pi 宿主普通回应/正式回应/受阻/落实/过期/无权闭环，S6.A5 的开发证据齐备；与游戏正式验收分开。`cli-disconnected-create-20261004.json` 配合事务回滚/并发 Integration 覆盖 S6.A4；新旧真实角色快照及不可变配置/显式刷新 Integration 覆盖 S6.A3。S6 全 Story 尚未验收，详见实现记录最新章节。
