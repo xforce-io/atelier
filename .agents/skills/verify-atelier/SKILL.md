@@ -1,17 +1,17 @@
 ---
 name: verify-atelier
-description: Verify Atelier L1.8 through both the real CLI and the product Atelier Skill in a coding-agent host. Foundational CLI only; full team Drive remains blocked until runtime and member integration exist.
+description: 通过真实 CLI 与 coding-agent 宿主中的产品 Atelier Skill 验证 Atelier L1.8；用于异步团队交付及失败恢复的应用验收。
 ---
 
 # Atelier CLI 与 Skill 验证手册
 
-状态：基础 CLI 与产品 Atelier Skill 安装/描述已有实现，完整团队尚未交付。本手册是开发验收用途，不是产品 Skill；先读 [功能地图](features/README.md)、[L1.8](../../../docs/design/1-first-team-delivery/product.md#8-验收与效果验证) 与 [当前实现范围](../../../docs/implementation/1-first-team-delivery.md)。基础集成测试不代表产品验收通过。
+状态：Issue #1 的 CLI 与产品 Atelier Skill 异步团队交付已验收，PR #2 已合入；后续候选须重新核对环境与证据适用性。本手册是开发验收用途，不是产品 Skill；先读 [功能地图](features/README.md)、[L1.8](../../../docs/design/1-first-team-delivery/product.md#8-验收与效果验证) 与 [当前实现范围](../../../docs/implementation/1-first-team-delivery.md)。基础集成测试不代表产品验收通过。
 
 ## Launch
 
 基础入口：`cargo build --locked` 后运行 `target/debug/atelier --help`，版本 0.1.0、JSON v2。使用专用空目录，通过 `--workspace <目录>` 选择范围；`workspace init --name <本人名称>` 初始化，写操作传 `--request-id`，更新传 `--revision`。运行 `cargo test --locked --test cli` 可检查跨进程基础路径，但不能把它当作真实宿主 Skill 验收。
 
-当前可驾驶 workspace、worker、team、task 的创建/更新/查询及人类承接、execute/verify/rework 安排及 blocker list/show/resolve、acceptance request/show、recovery apply、accept/reject 和 artifact export，mailbox list/respond/retry、message send、request show、runtime start/status/stop/reconcile、sample prepare、doctor。服务已有单实例生命周期和 API 投递执行，真实 CLI/Node 启停与崩溃资源核对使用合成凭据验证。API connection test 已有持久诊断及真实失败/重放检查；agent CLI 已提供 prepare/login/test 管理入口、运行服务投递和核对；Grok 团队负责人、Pi 执行成员及独立 Grok 检验成员的专用登录和受控模型工具诊断已通过；真实游戏暴露的 CLI 业务工具名冲突已修复，Pi 修改与提交、Grok 独立检查 19/19 和数字负责人发起人类验收已真实贯通，当前游戏已获用户明确接受并关闭任务，完整验收仍待验证，完整 Drive 仍为 BLOCKED；不运行尚不存在的命令。井字棋缺陷样例可通过 sample prepare 准备；独立检查器校准说明见 trusted-checks/tic-tac-toe/README.md。真实成员产出、具名宿主/模型及完整 Skill 路径仍须补齐证据。产品入口为 skill install/describe，源包在 skills/atelier；临时目标安装并让实际宿主读取，再以 describe 返回的身份和权限操作，不能从文件存在推定已通过。
+当前可驾驶 workspace、worker、team、task 的创建/更新/查询及人类承接、execute/verify/rework 安排及 blocker list/show/resolve、acceptance request/show、recovery apply、accept/reject 和 artifact export，mailbox list/respond/retry、message send、request show、runtime start/status/stop/reconcile、sample prepare、doctor。服务已有单实例生命周期和 API 投递执行，真实 CLI/Node 启停与崩溃资源核对使用合成凭据验证。API connection test 已有持久诊断及真实失败/重放检查；agent CLI 已提供 prepare/login/test 管理入口、运行服务投递和核对；Grok 团队负责人、Pi 执行成员及独立 Grok 检验成员的专用登录和受控模型工具诊断已通过；真实游戏暴露的 CLI 业务工具名冲突已修复，Pi 修改与提交、Grok 独立检查 19/19 和数字负责人发起人类验收已真实贯通，CLI 与实际 Skill 宿主的交付、拒绝返工及新版接受路径已验收；不运行尚不存在的命令。井字棋缺陷样例可通过 sample prepare 准备；独立检查器校准说明见 trusted-checks/tic-tac-toe/README.md。后续验证仍须记录真实成员产出、具名宿主/模型及完整 Skill 路径的证据。产品入口为 skill install/describe，源包在 skills/atelier；临时目标安装并让实际宿主读取，再以 describe 返回的身份和权限操作，不能从文件存在推定已通过。
 
 ## Doctor
 
