@@ -29,8 +29,37 @@ struct Setting {
     reference: CredentialReference,
     published: bool,
 }
+/// errSecItemNotFound. The account has no Keychain item.
+const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
+/// errSecAuthFailed. The item ACL refused this process.
+const ERR_SEC_AUTH_FAILED: i32 = -25293;
+/// errSecInteractionNotAllowed. A prompt would be required, and prompts are disabled.
+const ERR_SEC_INTERACTION_NOT_ALLOWED: i32 = -25308;
+
+pub const CURRENT_BINARY_UNREADABLE: &str =
+    "当前二进制无法读取已有 Keychain 项，请用当前二进制重新设置凭据";
+
 fn unavailable() -> Error {
     Error::Unavailable("Keychain 不可用或访问被拒绝；未回退到明文凭据".into())
+}
+
+fn current_binary_unreadable() -> Error {
+    Error::Unavailable(CURRENT_BINARY_UNREADABLE.into())
+}
+
+pub fn is_current_binary_unreadable(error: &Error) -> bool {
+    matches!(error, Error::Unavailable(message) if message == CURRENT_BINARY_UNREADABLE)
+}
+
+/// Map a Keychain read failure. Authorization failures mean the item is present
+/// but this signed binary cannot read it without a prompt. Other codes stay a
+/// generic Keychain failure. The secret is never copied into the error.
+fn read_failure(code: i32) -> Error {
+    if code == ERR_SEC_AUTH_FAILED || code == ERR_SEC_INTERACTION_NOT_ALLOWED {
+        current_binary_unreadable()
+    } else {
+        unavailable()
+    }
 }
 #[cfg(target_os = "macos")]
 fn read(account: &str) -> Result<Option<Vec<u8>>> {
@@ -38,8 +67,8 @@ fn read(account: &str) -> Result<Option<Vec<u8>>> {
         .map_err(|_| unavailable())?;
     match security_framework::passwords::get_generic_password(SERVICE, account) {
         Ok(bytes) => Ok(Some(bytes)),
-        Err(error) if error.code() == -25300 => Ok(None),
-        Err(_) => Err(unavailable()),
+        Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(None),
+        Err(error) => Err(read_failure(error.code())),
     }
 }
 #[cfg(not(target_os = "macos"))]
@@ -423,5 +452,27 @@ impl Store {
         )?;
         tx.commit()?;
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ERR_SEC_AUTH_FAILED, ERR_SEC_INTERACTION_NOT_ALLOWED, read_failure};
+    use crate::Error;
+
+    #[test]
+    fn authorization_failure_names_the_current_binary_and_omits_secrets() {
+        for code in [ERR_SEC_AUTH_FAILED, ERR_SEC_INTERACTION_NOT_ALLOWED] {
+            let message = read_failure(code).to_string();
+            assert_eq!(
+                message,
+                "当前二进制无法读取已有 Keychain 项，请用当前二进制重新设置凭据"
+            );
+            assert!(!message.contains("synthetic-secret"));
+        }
+        let generic = read_failure(-25291).to_string();
+        assert!(generic.contains("Keychain 不可用或访问被拒绝"));
+        assert!(!generic.contains("当前二进制"));
+        assert!(matches!(read_failure(-25291), Error::Unavailable(_)));
     }
 }

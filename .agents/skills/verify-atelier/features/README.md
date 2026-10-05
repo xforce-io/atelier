@@ -8,7 +8,7 @@ Issue #1：异步团队、CLI 与产品 Atelier Skill，L1 v0.10 / L2 v0.28。20
 
 | 文件 | L1.8 | 真实入口 |
 |---|---|---|
-| [setup-and-intake.md](setup-and-intake.md) | S1 / A1–A3、A7–A17 | 产品 Skill 安装/加载/按权限 describe、初始化、配置本人及三名数字员工、指定人或数字员工团队负责人、授权、隔离 CLI 准备/登录和运行服务启动。 |
+| [setup-and-intake.md](setup-and-intake.md) | S1 / A1–A3、A7–A18 | 产品 Skill 安装/加载/按权限 describe、初始化、配置本人及三名数字员工、指定人或数字员工团队负责人、授权、隔离 CLI 准备/登录和运行服务启动。重建后的二进制读不到已有 Keychain 项时，失败原因要求用当前二进制重新设置凭据。 |
 | [task-intake.md](task-intake.md) | S6 / A1–A5 | 提交目标生成 Task 与团队负责人投递；团队负责人实际作接受/等待/拒绝；pending 更新与旧决定冲突。 |
 | [code-delivery.md](code-delivery.md) | S2 / A1、A3–A9 | 安排入箱、服务领取、数字员工实际执行、固定产出和阶段回复；API 与两种 CLI 分别覆盖。 |
 | [verification-rework.md](verification-rework.md) | S3 / A1–A7 | 执行者获准直接交接或团队负责人安排；检验者接收/拒收、失败、团队负责人通过 CLI/成员工具有限返工、预留与消费、新版重验、inconclusive 终局后的明确新交接。 |
