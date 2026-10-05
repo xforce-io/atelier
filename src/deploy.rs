@@ -126,6 +126,7 @@ pub(crate) fn report(
         .get(actor)
         .ok_or_else(|| Error::Conflict("部署成员快照缺失".into()))?;
     reporting_run(db, &task, actor, &worker.kind)?;
+    finish_unclaimed_assignment(db, &task.id, reason)?;
     let mut deploy = record;
     deploy.reason = Some(reason.into());
     match result {
@@ -170,6 +171,16 @@ pub(crate) fn report(
         }
     }
     Ok(json!({"task": task, "deploy": task.deploy}))
+}
+
+/// Human deployers never claim the assignment. Recording the result ends that
+/// delivery here. A claimed deploy run still finishes through its own disposition.
+fn finish_unclaimed_assignment(db: &Connection, task_id: &str, reason: &str) -> Result<()> {
+    db.execute(
+        "UPDATE deliveries SET status='handled',reason=?2,revision=revision+1 WHERE run_id IS NULL AND status IN ('queued','blocked') AND message_id IN (SELECT id FROM messages WHERE task_id=?1 AND kind='assignment.deploy')",
+        rusqlite::params![task_id, reason],
+    )?;
+    Ok(())
 }
 
 fn reporting_run(db: &Connection, task: &Task, actor: &str, kind: &WorkerKind) -> Result<()> {

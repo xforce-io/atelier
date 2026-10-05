@@ -1,6 +1,6 @@
 # L2 技术设计：部署职责
 
-版本：v0.1，2026-10-05；状态：Draft。依据：[L1 v0.1](product.md)、[Issue #5](https://github.com/xforce-io/atelier/issues/5)。不提升工作区 `user_version`。旧团队 JSON 没有 `deployer` 时视为没有部署职责。
+版本：v0.1，2026-10-05；状态：Draft。依据：[L1 v0.1](product.md)、[Issue #5](https://github.com/xforce-io/atelier/issues/5)。不提升工作区 `user_version`。旧团队 JSON 没有 `deployer` 时视为没有部署职责。同日修订：提交部署结果时结束尚未领取的部署投递。
 
 ## 1. 数据
 
@@ -22,7 +22,7 @@
 
 `assignment.deploy` 的 purpose 是 `deploy`，执行上下文族也是 `deploy`，不并入 coordinate、execute 或 verify。适配器启动参数接受该族。只有冻结部署成员、部署记录为 `open`、并同时持有当前与冻结的 `task.deploy` 和 `task.communicate` 时可以领取。撤销 `task.deploy` 会把尚未领取的部署投递标为阻塞。成员工具 `task_deploy` 只在该运行中提供，并写下本轮处理结果；随后停止不再另报一次失败。
 
-提交成功：关闭任务，`outcome=deployed`，部署记录为 `succeeded`。提交失败：任务保持 `active`，`outcome` 为空，部署记录为 `failed`，向团队负责人投递一条 `failure`。已结束的部署拒绝再次提交。
+提交成功：关闭任务，`outcome=deployed`，部署记录为 `succeeded`。提交失败：任务保持 `active`，`outcome` 为空，部署记录为 `failed`，向团队负责人投递一条 `failure`。已结束的部署拒绝再次提交。同一事务把尚未领取（`run_id` 为空且状态为 `queued` 或 `blocked`）的 `assignment.deploy` 标为 `handled`，原因是本次提交依据。已领取的部署运行不在这里改投递，仍由 `task_deploy` 的处理结果在停止后标为 `handled`。成功关闭时，其余仍排队或阻塞的投递继续取消。
 
 本机本人在没有活动 Run 时用 `task deploy`。数字员工不能走管理入口。核心不派生部署进程，不调用 git，不读取 compose 文件。
 
@@ -36,8 +36,8 @@
 |---|---|
 | S1.A1 | `deploy_duty_is_explicit_and_cannot_fold_into_execution_or_verification` |
 | S1.A2 | 既有接受关闭测试保持有效 |
-| S1.A3、S1.A5 | `deploy_success_closes_separately_from_acceptance` |
+| S1.A3、S1.A5 | `deploy_success_closes_separately_from_acceptance`、`human_deploy_success_handles_the_unclaimed_assignment` |
 | S1.A4 | `missing_deploy_grant_records_acceptance_without_closing_or_delivering` |
-| S1.A6 | `deploy_failure_keeps_the_task_unfinished` |
+| S1.A6 | `deploy_failure_keeps_the_task_unfinished`、`human_deploy_failure_handles_the_unclaimed_assignment` |
 
 真实 CLI 与产品 Skill 路径另记，不由上述核心测试代替。
