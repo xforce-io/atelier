@@ -280,7 +280,7 @@ impl Store {
                 && allowed(Permission::Manage)
                 && allowed(Permission::Communicate)
             {
-                operations.push(operation("recovery","task decision respond <事项> --revision <版本> --answer retry|wait|cancel; task recovery apply <事项> --revision <版本>","本人选择与落实分开；applied=false 时读取 blocked_reason，不视为恢复成功。回应不授权或解除 unknown。"));
+                operations.push(operation("recovery","task decision list/show；task decision respond <事项> --revision <版本> --answer retry|wait|cancel; task recovery apply <事项> --revision <版本>","先看 situation 里的停止事实、当前产出和三个选项的改变。没有 message_respond 的 model_stop、连接失败、权限和额度不要都写成修复配置。正式回应仍是 task decision respond；已回应尚未落实。applied=false 时读取 blocked_reason。回应不授权或解除 unknown。不把该结构存成产出，也不据此验收。"));
             }
         }
         let permissions: Vec<_> = [

@@ -1018,7 +1018,7 @@ fn run(cli: Cli) -> Result<Value> {
             },
         },
         Top::Task(TaskCommand::Decision(DecisionCommand::Show { id })) => {
-            return Ok(json!(store.decision(&id)?));
+            return store.decision_view(&id);
         }
         Top::Task(TaskCommand::Decision(DecisionCommand::List { task })) => {
             return store.decisions(&task);

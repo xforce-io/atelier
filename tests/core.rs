@@ -10624,6 +10624,257 @@ fn choose_recovery_retry(f: &mut Fixture, task_id: &str) {
     }
 }
 
+#[test]
+fn recovery_query_separates_stop_facts_from_fix_configuration() {
+    let cases = [
+        (
+            "API 执行结束：completed（model_stop）；资源已回收",
+            "model_stop_without_message_respond",
+            "这不是修复配置",
+        ),
+        (
+            "API 执行结束：failed（MODEL_CONNECTION_ERROR）；资源已回收",
+            "connection_failure",
+            "这不是修复配置",
+        ),
+        ("测试注入：额度已耗尽", "quota", "不重置额度"),
+        ("成员权限已撤销", "permission", "恢复原授权"),
+        ("测试注入：资源已停止", "observed", "停止事实："),
+        ("成员未登录，执行配置缺失", "observed", "修复原配置范围内"),
+    ];
+    for (index, (reason, fact, marker)) in cases.iter().enumerate() {
+        let mut f = Fixture::new(true);
+        let (run, _) = f.running_member_with_contract(Some(generic_contract()));
+        f.store
+            .runtime_run_observed_stopped("service", &run.id, reason)
+            .unwrap();
+        let decision = recovery_for(&f, &run.task_id);
+        let shown = acceptance_cli(
+            &f,
+            &format!("show-recovery-{index}"),
+            &["task", "decision", "show", &decision.id],
+        );
+        let data = &shown["data"];
+        let situation = &data["situation"];
+        assert_eq!(situation["stop_fact"], *fact, "{reason}");
+        assert_eq!(situation["member_id"], f.team.leader);
+        assert_eq!(situation["run_id"], run.id);
+        assert_eq!(situation["delivery_id"], run.delivery_id);
+        assert_eq!(situation["delivery_status"], "blocked");
+        assert!(!situation["message_id"].as_str().unwrap().is_empty());
+        assert!(situation["artifact_id"].is_null());
+        assert!(situation["artifact_partial"].is_null());
+        assert!(situation["differs_from_baseline"].is_null());
+        assert_eq!(situation["response"], "not_responded");
+        assert_eq!(data["impact"], situation["impact"]);
+        let impact = data["impact"].as_str().unwrap();
+        assert!(impact.contains(marker), "{impact}");
+        assert!(impact.contains("不表示工作已经继续"), "{impact}");
+        assert!(!impact.contains("本人修复原配置/授权"), "{impact}");
+        assert!(
+            situation["choices"]["retry"]
+                .as_str()
+                .unwrap()
+                .contains("不表示工作已经继续")
+        );
+        assert!(
+            situation["choices"]["wait"]
+                .as_str()
+                .unwrap()
+                .contains("不重新排队")
+        );
+        assert!(
+            situation["choices"]["cancel"]
+                .as_str()
+                .unwrap()
+                .contains("等待资源停止")
+        );
+        let listed = f.store.decisions(&run.task_id).unwrap();
+        let listed = listed
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["id"] == decision.id)
+            .unwrap();
+        assert_eq!(listed["situation"]["stop_fact"], *fact);
+        let task = f.store.task(&run.task_id).unwrap();
+        assert!(task.current_artifact.is_none());
+        assert_ne!(task.outcome.as_deref(), Some("accepted"));
+        let mailbox = f.store.mailbox(None).unwrap();
+        let body: Value = serde_json::from_str(
+            mailbox
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|item| item["message"]["kind"] == "decision.request")
+                .unwrap()["message"]["body"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(!body["next"].as_str().unwrap().contains("修复配置"));
+    }
+
+    let mut f = Fixture::new(true);
+    let (run, _) = f.running_member_with_contract(Some(generic_contract()));
+    f.store
+        .runtime_run_observed_stopped(
+            "service",
+            &run.id,
+            "API 执行结束：completed（model_stop）；资源已回收",
+        )
+        .unwrap();
+    let decision = recovery_for(&f, &run.task_id);
+    f.store
+        .execute(
+            "respond-not-applied",
+            &Command::DecisionRespond {
+                id: decision.id.clone(),
+                revision: decision.revision,
+                answer: "retry".into(),
+            },
+        )
+        .unwrap();
+    let responded = acceptance_cli(
+        &f,
+        "show-responded",
+        &["task", "decision", "show", &decision.id],
+    );
+    assert_eq!(
+        responded["data"]["situation"]["response"],
+        "responded_not_applied"
+    );
+    assert_eq!(responded["data"]["state"], "responded");
+    let applied = f
+        .store
+        .execute(
+            "apply-retry",
+            &Command::RecoveryApply {
+                id: decision.id.clone(),
+                revision: decision.revision + 1,
+            },
+        )
+        .unwrap();
+    assert_eq!(applied["applied"], true);
+    let resolved = acceptance_cli(
+        &f,
+        "show-applied",
+        &["task", "decision", "show", &decision.id],
+    );
+    assert_eq!(resolved["data"]["situation"]["response"], "applied");
+    let task = f.store.task(&run.task_id).unwrap();
+    assert_ne!(task.outcome.as_deref(), Some("accepted"));
+    assert!(task.current_artifact.is_none());
+}
+
+#[test]
+fn recovery_query_shows_partial_current_artifact_without_accepting_task() {
+    let mut f = Fixture::new(true);
+    let executor_config = f.prepare_executor();
+    let (leader_run, binding) = f.running_member_with_contract(Some(generic_contract()));
+    assert_eq!(
+        f.store
+            .member_call(
+                &binding,
+                &member_operation(
+                    &leader_run,
+                    "accept",
+                    "task_intake",
+                    json!({"revision":2,"decision":"accept","reason":"约束和职责齐备"})
+                ),
+            )
+            .unwrap()["ok"],
+        true
+    );
+    let arranged = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(
+                &leader_run,
+                "arrange",
+                "task_arrange",
+                json!({"revision":3,"action":"execute","instruction":"写出当前页面"}),
+            ),
+        )
+        .unwrap();
+    assert_eq!(arranged["ok"], true, "{arranged}");
+    f.store
+        .runtime_run_observed_stopped(
+            "service",
+            &leader_run.id,
+            "API 执行结束：completed（model_stop）；资源已回收",
+        )
+        .unwrap();
+    let decision = recovery_for(&f, &leader_run.task_id);
+    let delivery = arranged["data"]["delivery"]["deliveryId"].as_str().unwrap();
+    let executor_run = f
+        .store
+        .runtime_claim("service", delivery, &executor_config)
+        .unwrap();
+    let candidate = f
+        .store
+        .runtime_candidate_directory("service", &executor_run.id)
+        .unwrap();
+    std::fs::create_dir_all(&candidate).unwrap();
+    std::fs::write(candidate.join("index.html"), "<h1>部分</h1>").unwrap();
+    f.store
+        .runtime_begin_launch("service", &executor_run.id)
+        .unwrap();
+    let executor_run = f
+        .store
+        .runtime_child_started("service", &executor_run.id, 654, "fixture-execution")
+        .unwrap();
+    let artifact = f
+        .store
+        .runtime_publish_artifact(
+            "service",
+            f.store
+                .runtime_prepare_artifact("service", &executor_run.id)
+                .unwrap()
+                .fix()
+                .unwrap(),
+            "核对停止后的未提交内容",
+        )
+        .unwrap();
+    assert!(artifact.partial);
+    let sample = tempfile::tempdir().unwrap();
+    let prepared = atelier::sample::prepare(sample.path()).unwrap();
+    let imported = f
+        .store
+        .execute(
+            "baseline",
+            &Command::InputImport {
+                repository: sample.path().to_str().unwrap().into(),
+                commit: prepared["commit"].as_str().unwrap().into(),
+            },
+        )
+        .unwrap();
+    let db = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3")).unwrap();
+    db.execute(
+        "UPDATE tasks SET data=json_set(data,'$.contract.code_input',?1) WHERE id=?2",
+        rusqlite::params![imported["id"].as_str().unwrap(), leader_run.task_id],
+    )
+    .unwrap();
+    drop(db);
+    // The task is already active, so a normal update cannot attach a code baseline.
+    // This writes only the stored reference so the read path can compare files.
+    f.store = Store::open(f.dir.path()).unwrap();
+    let shown = acceptance_cli(
+        &f,
+        "show-partial-artifact",
+        &["task", "decision", "show", &decision.id],
+    );
+    let situation = &shown["data"]["situation"];
+    assert_eq!(situation["stop_fact"], "model_stop_without_message_respond");
+    assert_eq!(situation["artifact_id"], artifact.id);
+    assert_eq!(situation["artifact_partial"], true);
+    assert_eq!(situation["differs_from_baseline"], true);
+    let task = f.store.task(&leader_run.task_id).unwrap();
+    assert_eq!(task.current_artifact.as_deref(), Some(artifact.id.as_str()));
+    assert_ne!(task.outcome.as_deref(), Some("accepted"));
+}
+
 fn recovery_for(f: &Fixture, task: &str) -> DecisionRequest {
     let list = f.store.decisions(task).unwrap();
     serde_json::from_value(

@@ -1,6 +1,12 @@
 # S5 验证路径
 
-状态：基础 CLI 部分已实现，完整产品路径未验收。标准为 [L1 v0.10 第 8 节](../../../../docs/design/1-first-team-delivery/product.md#8-验收与效果验证) 的 S5.A1、A2、A4、A5、A7–A14；本文件只提供路径，不复制另一套验收标准。
+状态：基础 CLI 部分已实现，完整产品路径未验收。标准为 [L1 v0.11 第 8 节](../../../../docs/design/1-first-team-delivery/product.md#8-验收与效果验证) 的 S5.A1、A2、A4、A5、A7–A15；本文件只提供路径，不复制另一套验收标准。
+
+## S5.A15 恢复事项能看出在决定什么
+
+用既有 CLI `task decision list` 和 `task decision show` 打开 `kind=recovery` 的待决定事项。结果里的 `situation` 给出停住的成员、消息、Run、投递状态，以及 `stop_fact`。没有 `message_respond` 的 `model_stop`、`MODEL_CONNECTION_ERROR`、权限和额度分开，不一律写成修复配置。同时给出当前产出标识、是否部分产出、相对固定代码基线有无文件差异；没有产出或没有基线时对应字段为空。`choices` 写明 retry、wait、cancel 各自的改变，retry 不表示工作已经继续。`task decision respond` 之后 `response` 为 `responded_not_applied`；`task recovery apply` 成功后才是 `applied`。该结构不是产出，任务不因此被接受。
+
+不重跑任务 eadea193。核心与真实 CLI 查询可以证明结构。产品 Skill 必须实际读到同一结构才算该入口通过；缺宿主记 not_run，不能把核心测试写成 S5.A15 pass。
 
 ## S5.A14 checkpoint 尚未写出
 

@@ -28,7 +28,7 @@ API 凭据已支持 macOS Keychain：`connection credential set <连接 ID> --re
 
 独立检验为 `inconclusive` 时，团队负责人可用 `task verify --inconclusive <检验 ID>` 或成员 `task_arrange` 的 `verificationId` 明确重新交接。核心保留原终局和交接历史，核对资源停止后创建新投递；必须重新接收、运行新检查，不能复用旧证据。明确失败仍须返工，重检计总 Run 额度。
 
-`mailbox retry <投递 ID> --revision <投递版本> --reason <修复依据>` 可由本人或获准团队负责人显式重新评估受阻投递，写操作要求 `--request-id`。数字负责人使用受控 `mailbox_retry`。已停止的未完成协调/检验沿用原账本并在新 Run 继续；已经受理的代码执行要走返工，未知资源须先核对，终局不重新调用模型。queued 不代表环境已可用，也不重置额度。负责人失效会原子建立本人恢复待办。使用 `task decision respond <事项> --revision <版本> --answer retry|wait|cancel` 保存选择，再用 `task recovery apply <事项> --revision <版本>` 落实；失败保留 `responded` 和 `blocked_reason`，选择本身不授予权限或解除 unknown。
+`mailbox retry <投递 ID> --revision <投递版本> --reason <修复依据>` 可由本人或获准团队负责人显式重新评估受阻投递，写操作要求 `--request-id`。数字负责人使用受控 `mailbox_retry`。已停止的未完成协调/检验沿用原账本并在新 Run 继续；已经受理的代码执行要走返工，未知资源须先核对，终局不重新调用模型。queued 不代表环境已可用，也不重置额度。负责人失效会原子建立本人恢复待办。`task decision list/show` 给出停住的成员、消息、Run、投递状态、按事实分开的停止原因、当前产出是否部分及相对基线有无文件差异，以及 retry、wait、cancel 各自的改变。retry 不表示工作已经继续。没有 message_respond 的 model_stop 和连接失败都不是修复配置。使用 `task decision respond <事项> --revision <版本> --answer retry|wait|cancel` 保存选择，再用 `task recovery apply <事项> --revision <版本>` 落实；失败保留 `responded` 和 `blocked_reason`，选择本身不授予权限或解除 unknown。已回应尚未落实与已落实分开。该结构不是产出，也不据此验收。
 
 `runtime reconcile` 在服务未持锁时独占核对旧 API 进程组与检查容器，不领取消息。返回 `stopped` 或 `blocked_unknown` 及未核对 Run；缺少 PID 登记继续 unknown，不凭人工声明释放。服务在线时由服务核对，该命令拒绝与服务并行。
 

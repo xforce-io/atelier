@@ -248,19 +248,29 @@ impl Store {
     pub fn decision(&self, id: &str) -> Result<DecisionRequest> {
         load(&self.connection, "decisions", id)
     }
+    pub fn decision_view(&self, id: &str) -> Result<Value> {
+        let tx = self.connection.unchecked_transaction()?;
+        let value = crate::recovery::project(
+            &tx,
+            serde_json::to_value(load::<DecisionRequest>(&tx, "decisions", id)?)?,
+        )?;
+        tx.commit()?;
+        Ok(value)
+    }
     pub fn decisions(&self, task_id: &str) -> Result<Value> {
-        self.task(task_id)?;
-        let mut stmt = self
-            .connection
-            .prepare("SELECT data FROM decisions WHERE task_id=?1 ORDER BY rowid")?;
+        let tx = self.connection.unchecked_transaction()?;
+        load::<Task>(&tx, "tasks", task_id)?;
+        let mut stmt = tx.prepare("SELECT data FROM decisions WHERE task_id=?1 ORDER BY rowid")?;
         let rows = stmt
             .query_map([task_id], |r| r.get::<_, String>(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        Ok(json!(
-            rows.iter()
-                .map(|s| serde_json::from_str::<Value>(s))
-                .collect::<std::result::Result<Vec<_>, _>>()?
-        ))
+        drop(stmt);
+        let mut projected = Vec::with_capacity(rows.len());
+        for row in rows {
+            projected.push(crate::recovery::project(&tx, serde_json::from_str(&row)?)?);
+        }
+        tx.commit()?;
+        Ok(json!(projected))
     }
 
     pub fn connection_version(&self, id: &str) -> Result<crate::connection::ConnectionVersion> {

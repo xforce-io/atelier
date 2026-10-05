@@ -1,6 +1,6 @@
 # L2 技术设计：异步团队、成员收件箱与共同工作核心
 
-版本：v0.30，2026-10-05 修订；状态：Draft，基础实现进行中，未验收。依据：[L1 v0.10（2026-10-05 修订，含 S5.A14 与 S1.A18）](product.md)、[Issue #1](https://github.com/xforce-io/atelier/issues/1)、[Issue #8](https://github.com/xforce-io/atelier/issues/8)、[Issue #6](https://github.com/xforce-io/atelier/issues/6)、[名词表](../../glossary.md)。显式部署职责的契约在 [Issue #5 L2](../5-deploy-duty/technical.md)，不改变本文件的版本。本版取代 v0.8 的“宿主串联前台执行命令”主干，定义目标契约；实际能力与验证情况另见 [实现记录](../../implementation/1-first-team-delivery.md)。
+版本：v0.31，2026-10-06 修订；状态：Draft。依据：[L1 v0.11](product.md)、[Issue #1](https://github.com/xforce-io/atelier/issues/1)、[Issue #18](https://github.com/xforce-io/atelier/issues/18)、[Issue #8](https://github.com/xforce-io/atelier/issues/8)、[Issue #6](https://github.com/xforce-io/atelier/issues/6)、[名词表](../../glossary.md)。显式部署职责的契约在 [Issue #5 L2](../5-deploy-duty/technical.md)，不改变本文件的版本。本版取代 v0.8 的“宿主串联前台执行命令”主干，定义目标契约；实际能力与验证情况另见 [实现记录](../../implementation/1-first-team-delivery.md)。
 
 本次范围来源及 Issue 旧版差异见 L1 文首修订追踪；L2 仅以 L1 v0.10 为当前设计依据。2026-10-01 线上 Issue #1 已同步范围与验收汇总，用户随后要求继续开发；三处恢复契约的规则与状态见 §9。v0.11 沿用已确认的 L1 v0.10 与全部验收，仅明确已合入的 milkie SDK、工具参数校验和 CLI 回复恢复契约；不将上游合入当作 Atelier 接入或产品验收完成。
 
@@ -27,6 +27,8 @@ v0.28 沿用 L1 v0.10，固定消费 milkie #275 / PR #276 的提交 a8e4ea9（�
 v0.29 沿用 L1 v0.10 的 2026-10-05 修订，落实 S5.A14 与 Issue #8。API 续接找不到 checkpoint 时，先看操作账本里有没有 `completed` 工具记录。没有则沿用原绑定上下文完成本轮，不把使用标记改回未使用，也不删除绑定或账本。已有 `completed` 记录时拒绝模型调用，终态为 `CHECKPOINT_MISSING`，与 `ADAPTER_FAILED` 分开。账本读不出“没有 completed 记录”时失败关闭。`pending` 仍走既有核对，不算已提交效果。CLI 会话缺失不套用这条例外。
 
 v0.30 沿用 L1 v0.10 的 2026-10-05 修订，落实 S1.A18 与 Issue #6。读取已有 API Keychain 项时，若系统返回授权失败或禁止交互（`errSecAuthFailed` / `errSecInteractionNotAllowed`），失败原因为「当前二进制无法读取已有 Keychain 项，请用当前二进制重新设置凭据」。连接检查使用固定码 `credential_unreadable`，并只允许这条固定说明。其它 Keychain 失败仍是「Keychain 不可用或访问被拒绝；未回退到明文凭据」。不放宽 ACL，不把秘密写入数据库、日志或错误文本。稳定签名且能读到原项的发布二进制不受这条分类影响。
+
+v0.31 依据 L1 v0.11，落实 S5.A15 与 Issue #18。恢复事项仍是 `kind=recovery` 的待决定事项，查询时组装 `situation`，不写入 `decisions` 行，也不写入 Artifact。`task decision list/show` 对恢复事项返回该结构，并让顶层 `impact` 与分类后的说明一致，避免旧行里的固定「修复配置」句子继续出现在 CLI 结果中。停止事实只按已保存的投递原因、Run 停止原因和接入终态分类：权限、额度、`MODEL_CONNECTION_ERROR`、没有消息处理结果且终态含 `model_stop`。其余事实保持原文。当前产出取任务的 `current_artifact`；文件差异只比较该产出与 `contract.code_input` 的路径、摘要、大小和可执行位。缺产出或缺少基线时对应字段为空。正式回应和落实仍走 `task decision respond` 与 `task recovery apply`。retry 重新排队时的原因不声称配置已经修复。
 
 ## 1. 设计依据与技术目标
 
@@ -351,7 +353,9 @@ task.report_blocker 保存 open 记录、通知与停止请求；无产出允许
 
 数字员工团队负责人投递因配置、撤权、额度或运行失败而 blocked/uncertain 时，核心同事务建立给本人（固定的任务验收者）的恢复待办，以 Task+原投递+阻塞事件去重；即使消息额度耗尽也持久保存，不自动唤起模型。处理选项仅为修复后重评估、继续等待、取消。本人响应不自动解除停止/未知或授予权限：先完成原配置内凭据/登录修复、原授权恢复或资源核对，再显式 retry；核心验证条件后 resolved，失败仍可查处理原因。数字员工团队负责人恢复后处理原工作；不可修复的冻结配置只能等待或取消后新任务。本版禁止本人以管理身份替数字员工履行承接与安排；本人查询和恢复待办不因数字员工失权而消失。
 
-恢复事项的 `respond` 只接受 retry/wait/cancel，open 或 responded 可按新 revision 更新选择；旧回应投递取消并保留历史。`task recovery apply` 必须由固定本人按当前及冻结管理/通信权执行：wait 保留待办；retry 核验原投递、资源、权限、版本和预算；cancel 提交正式取消并等待资源停止。业务拒绝回滚操作并持久保留 responded/blocked_reason；存储失败整体回滚。resolved 仅代表已核对已有终局或实际提交了重评估/取消，不代表新执行成功。直接 mailbox retry 同样须尊重本人恢复选择；已经持久的终局只核对、不重新运行。
+恢复事项的 `respond` 只接受 retry/wait/cancel，open 或 responded 可按新 revision 更新选择；旧回应投递取消并保留历史。`task recovery apply` 必须由固定本人按当前及冻结管理/通信权执行：wait 保留待办；retry 核验原投递、资源、权限、版本和预算，并把同一条消息重新排队，原因不声称配置已修复；cancel 提交正式取消并等待资源停止。业务拒绝回滚操作并持久保留 responded/blocked_reason；存储失败整体回滚。resolved 仅代表已核对已有终局或实际提交了重评估/取消，不代表新执行成功。直接 mailbox retry 同样须尊重本人恢复选择；已经持久的终局只核对、不重新运行。
+
+`task decision list/show` 在读取时为 `kind=recovery` 附加 `situation`，不把该对象写回决定行或产出表。字段为：`member_id`、`message_id`、`run_id`、`delivery_id`、`delivery_status`、`stop_fact`、`stop_detail`、`impact`、`artifact_id`、`artifact_partial`、`differs_from_baseline`、`choices`、`response`。`stop_fact` 只取 `permission`、`quota`、`connection_failure`、`model_stop_without_message_respond` 或 `observed`。分类读取投递原因、Run `stop_reason`，以及 `api_launches` / `cli_resources` 里已保存的 terminal；权限先于额度，额度先于 `MODEL_CONNECTION_ERROR`，其后才在没有 `message_dispositions` 且文本含 `model_stop` 时归入模型停止。匹配不到就保持 `observed` 和原文，不改写成修复配置。仅当 `observed` 的原文包含配置、凭据或登录时，说明才允许提到修复原配置范围内的该项。`response` 取 `not_responded`、`responded_not_applied`、`apply_blocked`、`applied`，或已有终态名。投递不存在、标明了 Run 但 Run 不存在、标明了当前产出但产出不存在、或标明了代码基线但输入不存在时，查询失败。没有当前产出或没有 `code_input` 时，对应字段为空。文件差异忽略列表顺序，路径重复视为有差异。
 
 ## 5. 接口与成员协作契约
 
@@ -373,7 +377,7 @@ task.report_blocker 保存 open 记录、通知与停止请求；无产出允许
 | runtime start/status/stop/reconcile                                         | 本人本机管理权；显式启动单工作区服务；status 不启动；stop 停止领取与核对资源，不关闭业务任务                                                                   |
 | task create/update/intake                                         | create 原子创建 pending Task 和团队负责人投递；update 仅 pending；intake 为有权团队负责人正式决定并冻结契约或保存等待/拒绝，普通消息不替代                            |
 | task execute/verify/rework                                        | 有权安排，返回 operation/message/delivery 与 queued/blocked；不前台等待模型。execute/rework 目标为固定执行者；verify 指定固定产出与检验者；rework 必需同任务原因引用：失败独立检验用 --verification，已核对执行失败用 --failed-run，已解决执行阻塞用 --blocker，人类拒绝用 --rejection 引用正式验收请求，四者互斥；verify --blocker（已解决阻塞）或互斥的 --inconclusive（最新不确定检验）显式重新交接同一产出 |
-| task decision request/list/show/respond/record                                      | respond 指定请求/revision、选项或输入；record 关联正式业务操作结果或无需变更原因；响应与落实分离，不能处理验收或隐式扩权                                               |
+| task decision request/list/show/respond/record                                      | respond 指定请求/revision、选项或输入；record 关联正式业务操作结果或无需变更原因；响应与落实分离，不能处理验收或隐式扩权。恢复事项的 list/show 附加 situation，不另建命令 |
 | task recovery apply | 固定本人、事项 ID/revision；落实 retry/wait/cancel，业务拒绝持久保留原因，不能解除未知或隐式授权 |
 | task acceptance request/show                                      | 冻结团队负责人按当前授权请求本人验收，绑定契约/Artifact/verification；request 返回待决定事项，show 查询已提交的接受/拒绝记录，不自动验收                                                                  |
 | task accept/reject/cancel                                         | 本人按授权作正式决定，版本与证据核验；取消另核对停止；Skill 代调保存脱敏 decision-ref，不把它当身份认证                                                          |
@@ -568,7 +572,7 @@ sequenceDiagram
 | S2  | code-delivery         | 收件箱领取、真实 API/两 CLI 执行、宿主退出后继续、产出及回复          | 唯一投递、身份绑定、资源/额度、权限隔离                                         |
 | S3  | verification-rework   | 成员直接交接、拒收、失败返工、新版重验、协调者决定                    | 因果与版本、独立性、报告/证据、有限消息循环、预留/消费/取消释放、旧原因与旧检查拒绝                                       |
 | S4  | human-acceptance      | 人类收件箱、明确接受/拒绝、过期决定、导出                        | 验收轮次与拒绝后新版交付、关闭投递、迟到决定与主体权限                                  |
-| S5  | failure-and-lifecycle | 服务/宿主分别退出、未知核对、撤权、无产出阻塞、重复消息；S5.A14 的 checkpoint 中断见该文件 | crash-after-commit、分类重试与返工预留、团队负责人失效升级、epoch、去重与缓存权限、停服/取消区分；无 checkpoint 且无 completed 工具记录时续接继续，有 completed 记录时 `CHECKPOINT_MISSING` |
+| S5  | failure-and-lifecycle | 服务/宿主分别退出、未知核对、撤权、无产出阻塞、重复消息；S5.A14 的 checkpoint 中断见该文件；S5.A15 的恢复事项结构见该文件 | crash-after-commit、分类重试与返工预留、团队负责人失效升级、epoch、去重与缓存权限、停服/取消区分；无 checkpoint 且无 completed 工具记录时续接继续，有 completed 记录时 `CHECKPOINT_MISSING`；恢复事项查询按停止事实、产出对照和回应/落实分开断言 |
 | S7  | asynchronous-team     | 无宿主串联的真实数字员工团队；消息与阶段结果可追踪                    | 消息预算、处理结果、安排的职责与权限双重约束、不可用成员跳过、人类等待不占 Run                    |
 
 补强既有验收项：S7.A1 在真实成员协作中核对每次执行/交接/返工安排的成员操作及因果消息；Integration 覆盖“已有产出但无交接决定”“已有失败结论但无返工决定”时不会自行生成下一阶段安排，系统通知仍按事实保存。S7.A2 核对同一成员收件箱中的不同 kind、LLM 直接选普通消息与通过业务操作间接产生通知，以及伪装正文不能升级类别。S4.A3/A4 覆盖缺少检验、旧版本、fail/inconclusive 的验收拒绝；更换消息、入口或请求 ID 不得绕过同一契约条件。实际执行状态仍为待实现/未运行。
