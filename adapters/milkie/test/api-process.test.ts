@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, symlink } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseStart, prepareContext } from '../src/api-process.js';
+import { adapterFailureTerminal } from '../src/channel.js';
 import { executeApiTurn } from '../src/api-turn.js';
 import { ToolLedger } from '../src/tool-ledger.js';
 import type { IModelGateway } from '@freemanxu/milkie';
@@ -81,12 +82,23 @@ test('API native dialogue continues across deliveries without replaying the prev
   }finally{await rm(root,{recursive:true,force:true});}
 });
 
-test('missing native checkpoint and symlink directory do not silently start a fresh context',async()=>{
+test('missing native checkpoint continues only when no tool result was committed',async()=>{
   const {root,start}=await fixture();
   try {
     await assert.rejects(prepareContext({...start,resume:true},scope));
     const context=await prepareContext(start,scope);context.store.close();
-    await assert.rejects(prepareContext({...start,resume:true},scope),/checkpoint_missing/);
+    const continued=await prepareContext({...start,resume:true},scope);
+    assert.equal(continued.checkpoint,undefined);
+    continued.store.close();
+    const ledger=await ToolLedger.openDelivery(start.ledgerDirectory,scope.deliveryId);
+    await assert.rejects(ledger.call(scope.runId,'call-pending','task_read',{},async()=>{throw new Error('stop-before-result');}));
+    const afterPending=await prepareContext({...start,resume:true},{...scope,runId:'run-pending'});
+    assert.equal(afterPending.checkpoint,undefined);
+    afterPending.store.close();
+    await ledger.call(scope.runId,'call-done','task_read',{},async()=>({ok:true}));
+    await assert.rejects(prepareContext({...start,resume:true},{...scope,runId:'run-two'}),/native_checkpoint_missing/);
+    assert.deepEqual(adapterFailureTerminal(new Error('native_checkpoint_missing')),{stopReason:'failed',stopCode:'CHECKPOINT_MISSING',nativeStopReason:'native_checkpoint_missing',recoveredOperations:0});
+    assert.equal(adapterFailureTerminal(new Error('adapter_start_invalid')).stopCode,'ADAPTER_FAILED');
     await symlink(start.contextDirectory,join(root,'linked-context'));
     await assert.rejects(prepareContext({...start,contextDirectory:join(root,'linked-context'),resume:true},scope),/directory_invalid/);
     await assert.rejects(prepareContext({...start,ledgerDirectory:start.contextDirectory+'/.',resume:true},scope),/must_be_separate/);

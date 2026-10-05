@@ -1,6 +1,12 @@
 # S5 验证路径
 
-状态：基础 CLI 部分已实现，完整产品路径未验收。标准为 [L1 v0.10 第 8 节](../../../../docs/design/1-first-team-delivery/product.md#8-验收与效果验证) 的 S5.A1、A2、A4、A5、A7–A13；本文件只提供路径，不复制另一套验收标准。
+状态：基础 CLI 部分已实现，完整产品路径未验收。标准为 [L1 v0.10 第 8 节](../../../../docs/design/1-first-team-delivery/product.md#8-验收与效果验证) 的 S5.A1、A2、A4、A5、A7–A14；本文件只提供路径，不复制另一套验收标准。
+
+## S5.A14 checkpoint 尚未写出
+
+API 运行在写出 checkpoint 之前中断后，用 `run show` 看停止码，再按恢复事项 retry 同一上下文。没有已提交工具效果时，下一次运行继续，停止码不再是反复的 `ADAPTER_FAILED`。账本已有 completed 工具记录时，停止码为 `CHECKPOINT_MISSING`，上下文仍标记为已使用。
+
+2026-10-05：适配测试覆盖空账本、仅 pending 与 completed 三条。真实 CLI 在写出 checkpoint 前中断后，无 completed 记录的续接保持运行；植入 completed 记录后 `run show` 为 `CHECKPOINT_MISSING`。产品 Skill 对同一 Run 的 describe 与 `run show` 读到同一停止码，未代答仍开放的恢复事项。证据 `.agents/verify-runs/8/result.md`。
 
 ## 真实入口
 

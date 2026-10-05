@@ -10,6 +10,12 @@ export interface Scope { taskId: string; runId: string; deliveryId: string; }
 interface Frame extends Scope { protocolVersion: 1; requestId: string; seq: number; kind: string; payload: unknown; }
 interface Capabilities { milkieCommit: string; transport: string; skillDigest: string; builtinToolsDisabled: boolean; stableToolCallIds: boolean; nativeCheckpoint: boolean; privateTools: boolean; }
 export interface Terminal { stopReason: 'completed'|'cancelled'|'deadline'|'budget_exhausted'|'failed'; stopCode?: string; nativeStopReason: string; recoveredOperations: number; }
+export function adapterFailureTerminal(error: unknown): Terminal {
+  if (error instanceof Error && error.message === 'native_checkpoint_missing') {
+    return { stopReason: 'failed', stopCode: 'CHECKPOINT_MISSING', nativeStopReason: 'native_checkpoint_missing', recoveredOperations: 0 };
+  }
+  return { stopReason: 'failed', stopCode: 'ADAPTER_FAILED', nativeStopReason: 'runtime_error', recoveredOperations: 0 };
+}
 const hash = (value: string|Buffer) => createHash('sha256').update(value).digest('hex');
 const invalid = () => new Error('member_channel_protocol_invalid');
 function canonical(value: unknown): string {

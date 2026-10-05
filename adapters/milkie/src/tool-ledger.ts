@@ -43,6 +43,43 @@ const temporaryName = /^[a-f0-9]{64}\.json\.[a-f0-9-]{36}\.tmp$/;
 function deliveryDirectoryId(value: string): void {
   if (typeof value !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(value)) throw new Error('tool_delivery_invalid');
 }
+async function fileHasCompletedEffect(file: string): Promise<boolean> {
+  const metadata = await fs.lstat(file);
+  if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > recordLimit) throw new Error('tool_ledger_corrupt');
+  let record: Record;
+  try { record = JSON.parse(await fs.readFile(file, 'utf8')) as Record; }
+  catch { throw new Error('tool_ledger_corrupt'); }
+  if (!record || record.version !== 1 || !['pending', 'completed'].includes(record.state)) throw new Error('tool_ledger_corrupt');
+  if (record.state === 'completed' && !Object.hasOwn(record, 'result')) throw new Error('tool_ledger_corrupt');
+  return record.state === 'completed';
+}
+/** True only when a durable tool result exists. Unreadable or unexpected
+ * entries fail closed so a missing checkpoint cannot be treated as empty. */
+export async function ledgerHasCompletedEffect(root: string): Promise<boolean> {
+  const stat = await fs.lstat(root);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0) throw new Error('tool_ledger_invalid');
+  for (const entry of await fs.readdir(root, { withFileTypes: true })) {
+    if (entry.isSymbolicLink()) throw new Error('tool_ledger_invalid');
+    const path = join(root, entry.name);
+    if (entry.isFile()) {
+      if (temporaryName.test(entry.name)) continue;
+      if (!recordName.test(entry.name)) throw new Error('tool_ledger_corrupt');
+      if (await fileHasCompletedEffect(path)) return true;
+      continue;
+    }
+    if (!entry.isDirectory()) throw new Error('tool_ledger_corrupt');
+    deliveryDirectoryId(entry.name);
+    const child = await fs.lstat(path);
+    if (child.isSymbolicLink() || !child.isDirectory() || (child.mode & 0o077) !== 0) throw new Error('tool_ledger_invalid');
+    for (const item of await fs.readdir(path, { withFileTypes: true })) {
+      if (item.isSymbolicLink()) throw new Error('tool_ledger_invalid');
+      if (item.isFile() && temporaryName.test(item.name)) continue;
+      if (!item.isFile() || !recordName.test(item.name)) throw new Error('tool_ledger_corrupt');
+      if (await fileHasCompletedEffect(join(path, item.name))) return true;
+    }
+  }
+  return false;
+}
 async function syncDirectory(path: string): Promise<void> {
   const fd = await fs.open(path, 'r');
   try { await fd.sync(); } finally { await fd.close(); }
