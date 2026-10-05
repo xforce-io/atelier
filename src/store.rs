@@ -1077,6 +1077,7 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
                         ],
                         Permission::Execute => vec!["assignment.execute", "assignment.rework"],
                         Permission::Verify => vec!["handoff.verify"],
+                        Permission::Deploy => vec!["assignment.deploy"],
                         Permission::Communicate => vec![
                             "intake",
                             "intake.updated",
@@ -1090,6 +1091,7 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
                             "decision.result",
                             "assignment.execute",
                             "assignment.rework",
+                            "assignment.deploy",
                             "handoff.verify",
                         ],
                         _ => vec![],
@@ -1374,7 +1376,7 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
             revision: expected,
             result,
             reason,
-        } => crate::deploy::report(db, actor, id, *expected, result.clone(), reason),
+        } => crate::deploy::report(db, actor, id, *expected, *result, reason),
         Command::TaskCancel {
             id,
             revision: expected,

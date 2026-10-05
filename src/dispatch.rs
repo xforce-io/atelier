@@ -49,12 +49,7 @@ impl Store {
                 continue;
             }
             let kind: String = row.get(4)?;
-            let purpose = match kind.as_str() {
-                "assignment.execute" => "execute",
-                "assignment.rework" => "rework",
-                "handoff.verify" => "verify",
-                _ => "coordinate",
-            };
+            let purpose = crate::runs::delivery_purpose(&kind);
             return Ok(Some(Work {
                 delivery_id: row.get(0)?,
                 revision: row.get(1)?,

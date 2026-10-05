@@ -665,6 +665,18 @@ fn member_effect(
             let mut updated = run.clone();
             updated.task_revision = current.revision;
             crate::runs::save(db, &updated)?;
+            crate::disposition::record(
+                db,
+                &updated,
+                &current,
+                json!({
+                    "kind": "deploy",
+                    "result": match input.result {
+                        DeployResult::Succeeded => "succeeded",
+                        DeployResult::Failed => "failed",
+                    }
+                }),
+            )?;
             return Ok(result);
         }
         MemberCommand::TaskArrange(input) => {

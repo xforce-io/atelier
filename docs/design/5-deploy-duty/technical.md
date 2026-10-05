@@ -20,7 +20,7 @@
 
 ## 4. 运行与提交
 
-`assignment.deploy` 的 purpose 是 `deploy`。只有冻结部署成员、部署记录为 `open`、并同时持有当前与冻结的 `task.deploy` 和 `task.communicate` 时可以领取。成员工具 `task_deploy` 只在该运行中提供。
+`assignment.deploy` 的 purpose 是 `deploy`，执行上下文族也是 `deploy`，不并入 coordinate、execute 或 verify。适配器启动参数接受该族。只有冻结部署成员、部署记录为 `open`、并同时持有当前与冻结的 `task.deploy` 和 `task.communicate` 时可以领取。撤销 `task.deploy` 会把尚未领取的部署投递标为阻塞。成员工具 `task_deploy` 只在该运行中提供，并写下本轮处理结果；随后停止不再另报一次失败。
 
 提交成功：关闭任务，`outcome=deployed`，部署记录为 `succeeded`。提交失败：任务保持 `active`，`outcome` 为空，部署记录为 `failed`，向团队负责人投递一条 `failure`。已结束的部署拒绝再次提交。
 

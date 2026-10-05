@@ -26,7 +26,7 @@ pub struct ExecutionContext {
 
 fn family(purpose: &str) -> Result<&str> {
     match purpose {
-        "coordinate" | "verify" => Ok(purpose),
+        "coordinate" | "verify" | "deploy" => Ok(purpose),
         "execute" | "rework" => Ok("execute"),
         _ => Err(Error::Invalid("未知执行用途".into())),
     }

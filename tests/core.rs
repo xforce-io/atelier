@@ -12383,13 +12383,69 @@ fn deploy_success_closes_separately_from_acceptance() {
         .as_str()
         .unwrap()
         .to_string();
+    let version = f
+        .store
+        .execution_configuration(&configuration)
+        .unwrap()
+        .connection_version;
+    let reference = atelier::credential::CredentialReference {
+        connection_version: version.clone(),
+        generation: 1,
+        account: "deploy-launch-metadata-only".into(),
+    };
+    let db = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3")).unwrap();
+    db.execute(
+        "INSERT INTO credentials(version_id,data) VALUES(?1,?2)",
+        rusqlite::params![version, serde_json::to_string(&reference).unwrap()],
+    )
+    .unwrap();
+    let context = f
+        .store
+        .runtime_context(
+            "service",
+            &verification.task_id,
+            &deployer,
+            &configuration,
+            "deploy",
+        )
+        .unwrap();
+    assert_eq!(context.purpose_family, "deploy");
+    let wrong = f
+        .store
+        .runtime_context(
+            "service",
+            &verification.task_id,
+            &deployer,
+            &configuration,
+            "coordinate",
+        )
+        .unwrap();
     let run = f
         .store
         .runtime_claim("service", &delivery, &configuration)
         .unwrap();
     assert_eq!(run.purpose, "deploy");
     assert_eq!(run.worker_id, deployer);
-    f.store.runtime_begin_launch("service", &run.id).unwrap();
+    assert!(
+        f.store
+            .runtime_begin_api_launch("service", &run.id, &wrong, 1)
+            .is_err()
+    );
+    f.store
+        .runtime_begin_api_launch("service", &run.id, &context, 1)
+        .unwrap();
+    assert!(
+        f.store
+            .runtime_context(
+                "service",
+                &verification.task_id,
+                &deployer,
+                &configuration,
+                "deploy",
+            )
+            .unwrap()
+            .used
+    );
     let run = f
         .store
         .runtime_child_started("service", &run.id, 321, "fixture-deployer")
@@ -12483,12 +12539,65 @@ fn deploy_failure_keeps_the_task_unfinished() {
         .unwrap();
     assert_eq!(again["ok"], false, "{again}");
     assert_eq!(f.store.task(&verification.task_id).unwrap().state, "active");
-    let leader = f.store.mailbox(Some(&f.team.leader)).unwrap();
+    let before = failure_count(&f, &verification.task_id);
+    assert_eq!(before, 1);
+    f.store
+        .runtime_run_observed_stopped("service", &run.id, "fixture deploy run stopped")
+        .unwrap();
+    assert_eq!(failure_count(&f, &verification.task_id), before);
+    let status: String = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3"))
+        .unwrap()
+        .query_row(
+            "SELECT status FROM deliveries WHERE id=?1",
+            [&delivery],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "handled");
+}
+
+fn failure_count(f: &Fixture, task_id: &str) -> i64 {
+    rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3"))
+        .unwrap()
+        .query_row(
+            "SELECT count(*) FROM messages WHERE task_id=?1 AND kind='failure'",
+            [task_id],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+#[test]
+fn revoking_deploy_blocks_the_queued_delivery() {
+    let mut f = Fixture::new(false);
+    let (deployer, configuration) = add_deployer(&mut f, true);
+    let (verification, _) = accept_for_deploy(&mut f);
+    f.store
+        .execute(
+            "revoke-deploy",
+            &Command::PermissionsUpdate {
+                decision_id: None,
+                team_id: f.team.id.clone(),
+                revision: f.store.team(&f.team.id).unwrap().revision,
+                grant: BTreeMap::new(),
+                revoke: BTreeMap::from([(deployer.clone(), vec![Permission::Deploy])]),
+            },
+        )
+        .unwrap();
+    let queued = f.store.mailbox(Some(&deployer)).unwrap();
+    let delivery = queued
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["message"]["kind"] == "assignment.deploy")
+        .unwrap();
+    assert_eq!(delivery["status"], "blocked");
+    assert_eq!(delivery["reason"], "成员所需权限已撤销");
     assert!(
-        leader
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|item| item["message"]["kind"] == "failure")
+        f.store
+            .runtime_claim("service", delivery["id"].as_str().unwrap(), &configuration)
+            .is_err()
     );
+    assert_eq!(f.store.task(&verification.task_id).unwrap().state, "active");
+    assert_eq!(f.store.task(&verification.task_id).unwrap().outcome, None);
 }

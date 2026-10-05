@@ -48,6 +48,15 @@ pub(crate) fn service(db: &Connection, epoch: &str, starting: bool) -> Result<()
         _ => Err(Error::Conflict("运行服务 epoch 已失效或正在停止".into())),
     }
 }
+pub(crate) fn delivery_purpose(kind: &str) -> &'static str {
+    match kind {
+        "assignment.execute" => "execute",
+        "assignment.rework" => "rework",
+        "assignment.deploy" => "deploy",
+        "handoff.verify" => "verify",
+        _ => "coordinate",
+    }
+}
 fn required_permission(purpose: &str) -> Permission {
     match purpose {
         "execute" | "rework" => Permission::Execute,
@@ -293,12 +302,11 @@ impl Store {
             return Err(Error::Forbidden("执行配置不属于该成员".into()));
         }
         let purpose = match kind.as_str() {
-            "assignment.execute" => "execute",
-            "assignment.rework" => "rework",
-            "assignment.deploy" => "deploy",
-            "handoff.verify" => "verify",
-            "intake" | "intake.updated" | "work.note" | "work.question" | "result" | "failure"
-            | "blocker" | "resolved" | "decision.request" | "decision.result" => "coordinate",
+            "assignment.execute" | "assignment.rework" | "assignment.deploy" | "handoff.verify"
+            | "intake" | "intake.updated" | "work.note" | "work.question" | "result"
+            | "failure" | "blocker" | "resolved" | "decision.request" | "decision.result" => {
+                delivery_purpose(&kind)
+            }
             _ => return Err(Error::Invalid("消息类别没有成员处理契约".into())),
         };
         if purpose != "coordinate" {
@@ -480,5 +488,16 @@ impl Store {
         }
         tx.commit()?;
         Ok(run)
+    }
+}
+
+#[cfg(test)]
+mod purpose_tests {
+    use super::delivery_purpose;
+
+    #[test]
+    fn deploy_delivery_is_its_own_purpose() {
+        assert_eq!(delivery_purpose("assignment.deploy"), "deploy");
+        assert_ne!(delivery_purpose("assignment.deploy"), "coordinate");
     }
 }

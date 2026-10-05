@@ -25,6 +25,12 @@ async function fixture() {
   return {root,start};
 }
 
+test('deploy purpose family is accepted as its own adapter start',async()=>{
+  const {root,start}=await fixture();
+  try { assert.equal(parseStart({...start,purposeFamily:'deploy'}).purposeFamily,'deploy'); }
+  finally { await rm(root,{recursive:true,force:true}); }
+});
+
 test('API process persists bound native context and explicitly resumes its checkpoint',async()=>{
   const {root,start}=await fixture();
   try {
