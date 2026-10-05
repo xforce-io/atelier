@@ -12521,6 +12521,15 @@ fn deploy_failure_keeps_the_task_unfinished() {
         )
         .unwrap();
     assert_eq!(reported["ok"], true, "{reported}");
+    let running: String = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3"))
+        .unwrap()
+        .query_row(
+            "SELECT status FROM deliveries WHERE id=?1",
+            [&delivery],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(running, "claimed");
     let task = f.store.task(&verification.task_id).unwrap();
     assert_eq!(task.state, "active");
     assert_eq!(task.outcome, None);
@@ -12600,4 +12609,134 @@ fn revoking_deploy_blocks_the_queued_delivery() {
     );
     assert_eq!(f.store.task(&verification.task_id).unwrap().state, "active");
     assert_eq!(f.store.task(&verification.task_id).unwrap().outcome, None);
+}
+
+fn grant_human_deployer(f: &mut Fixture) {
+    f.store
+        .execute(
+            "human-deployer",
+            &Command::TeamUpdate {
+                patch: TeamPatch {
+                    id: f.team.id.clone(),
+                    revision: f.store.team(&f.team.id).unwrap().revision,
+                    name: f.team.name.clone(),
+                    members: f.team.members.clone(),
+                    leader: f.team.leader.clone(),
+                    executor: f.team.executor.clone(),
+                    verifier: f.team.verifier.clone(),
+                    deployer: Some(f.human.clone()),
+                    grants: BTreeMap::new(),
+                },
+            },
+        )
+        .unwrap();
+    f.store
+        .execute(
+            "human-deploy-grant",
+            &Command::PermissionsUpdate {
+                decision_id: None,
+                team_id: f.team.id.clone(),
+                revision: f.store.team(&f.team.id).unwrap().revision,
+                grant: BTreeMap::from([(
+                    f.human.clone(),
+                    vec![Permission::Deploy, Permission::Communicate],
+                )]),
+                revoke: BTreeMap::new(),
+            },
+        )
+        .unwrap();
+}
+
+fn assignment_deploy(f: &Fixture, worker: &str) -> Value {
+    f.store
+        .mailbox(Some(worker))
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["message"]["kind"] == "assignment.deploy")
+        .unwrap()
+        .clone()
+}
+
+#[test]
+fn human_deploy_failure_handles_the_unclaimed_assignment() {
+    let mut f = Fixture::new(false);
+    grant_human_deployer(&mut f);
+    let (verification, accepted) = accept_for_deploy(&mut f);
+    let delivery = assignment_deploy(&f, &f.human);
+    assert_eq!(delivery["status"], "queued");
+    let id = delivery["id"].as_str().unwrap();
+    let reported = f
+        .store
+        .execute(
+            "human-deploy-fail",
+            &Command::DeployReport {
+                id: verification.task_id.clone(),
+                revision: accepted["task"]["revision"].as_u64().unwrap(),
+                result: DeployResult::Failed,
+                reason: "human deploy failed".into(),
+            },
+        )
+        .unwrap();
+    let task = f.store.task(&verification.task_id).unwrap();
+    assert_eq!(task.state, "active");
+    assert_eq!(task.outcome, None);
+    assert_eq!(task.deploy.as_ref().unwrap().state, "failed");
+    assert_eq!(reported["task"]["revision"], task.revision);
+    let finished = assignment_deploy(&f, &f.human);
+    assert_eq!(finished["id"], id);
+    assert_eq!(finished["status"], "handled");
+    assert_eq!(finished["reason"], "human deploy failed");
+    let again = f.store.execute(
+        "human-deploy-again",
+        &Command::DeployReport {
+            id: verification.task_id.clone(),
+            revision: task.revision,
+            result: DeployResult::Succeeded,
+            reason: "second try".into(),
+        },
+    );
+    assert!(matches!(again, Err(Error::Conflict(_))), "{again:?}");
+    let retry = f
+        .store
+        .execute(
+            "human-deploy-retry",
+            &Command::MailboxRetry {
+                id: id.into(),
+                revision: finished["revision"].as_u64().unwrap(),
+                reason: "queued assignment cannot be cleared by retry".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(retry["delivery"]["status"], "handled");
+    assert_eq!(assignment_deploy(&f, &f.human)["status"], "handled");
+    assert_eq!(failure_count(&f, &verification.task_id), 1);
+}
+
+#[test]
+fn human_deploy_success_handles_the_unclaimed_assignment() {
+    let mut f = Fixture::new(false);
+    grant_human_deployer(&mut f);
+    let (verification, accepted) = accept_for_deploy(&mut f);
+    let delivery = assignment_deploy(&f, &f.human);
+    assert_eq!(delivery["status"], "queued");
+    let reported = f
+        .store
+        .execute(
+            "human-deploy-ok",
+            &Command::DeployReport {
+                id: verification.task_id,
+                revision: accepted["task"]["revision"].as_u64().unwrap(),
+                result: DeployResult::Succeeded,
+                reason: "human deploy succeeded".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(reported["task"]["state"], "closed");
+    assert_eq!(reported["task"]["outcome"], "deployed");
+    let finished = assignment_deploy(&f, &f.human);
+    assert_eq!(finished["id"], delivery["id"]);
+    assert_eq!(finished["status"], "handled");
+    assert_eq!(finished["reason"], "human deploy succeeded");
 }
