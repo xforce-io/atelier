@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>井字棋</title>
+<style>
+  body { font: 18px system-ui,sans-serif; max-width: 440px; margin: 3rem auto; padding: 1rem; background: #f6f4ee; color: #21352d; }
+  .board { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+  .board button { min-height: 100px; font-size: 40px; background: white; color: #21352d; border: 2px solid #94aa9e; border-radius: 8px; }
+  button { cursor: pointer; }
+  [data-action=restart] { margin-top: 20px; padding: 12px 20px; font: inherit; }
+</style>
+<h1>双人井字棋</h1>
+<p data-testid="status" role="status" aria-live="polite">轮到 X</p>
+<div class="board" aria-label="棋盘"></div>
+<button data-action="restart">重新开始</button>
+<p>两人轮流点击空位，X 先手。连成一线获胜；点击“重新开始”开启下一局。</p>
+<script>
+  const board = document.querySelector('.board');
+  const status = document.querySelector('[data-testid=status]');
+  let cells, turn, finished;
+  // This intentionally defective input baseline omits diagonal winning lines.
+  const winningLines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8]];
+  function reset() {
+    cells = Array(9).fill(''); turn = 'X'; finished = false;
+    status.textContent = '轮到 X';
+    board.replaceChildren(...cells.map((_,index) => {
+      const button = document.createElement('button');
+      button.dataset.cell = index;
+      button.setAttribute('aria-label', `第${Math.floor(index/3)+1}行第${index%3+1}列`);
+      button.addEventListener('click', () => move(index));
+      return button;
+    }));
+  }
+  function move(index) {
+    if (finished || cells[index]) return;
+    cells[index] = turn;
+    board.children[index].textContent = turn;
+    if (winningLines.some(line => line.every(i => cells[i] === turn))) {
+      finished = true; status.textContent = `${turn} 获胜`;
+    } else if (cells.every(Boolean)) {
+      finished = true; status.textContent = '平局';
+    } else {
+      turn = turn === 'X' ? 'O' : 'X'; status.textContent = `轮到 ${turn}`;
+    }
+  }
+  document.querySelector('[data-action=restart]').addEventListener('click', reset);
+  reset();
+</script>
+</html>

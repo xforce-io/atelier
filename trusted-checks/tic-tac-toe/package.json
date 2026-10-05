@@ -1,0 +1,8 @@
+{
+  "name": "atelier-tic-tac-toe-checks",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": { "playwright": "1.56.1" },
+  "scripts": { "check": "node check.mjs" }
+}

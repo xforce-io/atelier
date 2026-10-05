@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+// Deterministic Pi wire protocol fixture. No model or native CLI acceptance.
+const fs = require('node:fs'), net = require('node:net'), crypto = require('node:crypto');
+const args = process.argv.slice(2);
+const arg = name => args[args.indexOf(name) + 1];
+const emit = value => process.stdout.write(JSON.stringify(value) + '\n');
+let input = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', chunk => input += chunk);
+process.stdin.on('end', async () => {
+  try {
+    const prompt = JSON.parse(input);
+    const request = prompt.connectionProbe ? {calls:[{name:'connection_probe',input:{challenge:prompt.connectionProbe.challenge}}]} : JSON.parse(prompt.workMessage);
+    if(prompt.connectionProbe && args.includes('fixture-no-tool')) request.calls=[];
+    if(prompt.connectionProbe && args.includes('fixture-wrong-challenge')) request.calls[0].input.challenge='wrong';
+    if(prompt.connectionProbe && fs.existsSync(process.env.PI_CODING_AGENT_DIR+'/fixture-probe-hold')) request.hold=true;
+    // The real-service integration supplies a bound mailbox message rather
+    // than a synthetic call array. This remains an explicitly fake model.
+    if(request.message && !request.calls) {
+      request.hold=request.message.body.includes('fixture-hold');
+      request.calls=[{name:'task_read',input:{}}];
+      if(!request.hold)request.calls.push({name:'message_respond',input:{kind:'wait',reason:'synthetic service integration',handler:request.humanWorkerId}});
+    }
+    const file = arg('--session');
+    const session = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8').split('\n')[0]) : { type: 'session', id: crypto.randomUUID(), cwd: process.cwd() };
+    fs.appendFileSync(file, (fs.existsSync(file) ? '' : JSON.stringify(session) + '\n') + JSON.stringify({ prompt }) + '\n');
+    fs.writeFileSync('last-prompt.json', JSON.stringify(prompt));
+    fs.writeFileSync('last-args.json', JSON.stringify(args));
+    emit(session);
+    if(request.iterationLoop) {
+      const extension=fs.readFileSync(arg('--extension'),'utf8');
+      const limit=Number(extension.match(/"maxModelIterations":(\d+)/)[1]);
+      const marker=JSON.parse(extension.match(/"markerFile":("(?:\\.|[^"\\])*")/)[1]);
+      // Protocol fixture: verifies the adapter/SDK budget and terminal mapping.
+      // It does not prove a native provider hook stops a real HTTP request.
+      fs.writeFileSync('fixture-iterations.json',JSON.stringify({limit,requests:limit}));
+      fs.writeFileSync(marker,'exhausted\n');
+      emit({type:'agent_end',messages:[]});return;
+    }
+    const results = [];
+    for (const [i, call] of (request.calls || []).entries()) {
+      results.push(await new Promise((resolve, reject) => {
+        const socket = net.connect(process.env.MILKIE_TOOL_SOCKET);
+        socket.setEncoding('utf8');
+        let buffer = '';
+        socket.on('error', reject);
+        socket.on('connect', () => socket.write(JSON.stringify({ id: String(i), nativeCallId: 'native-' + i, ...call }) + '\n'));
+        socket.on('data', chunk => {
+          buffer += chunk;
+          if (buffer.includes('\n')) { socket.end(); resolve(JSON.parse(buffer.split('\n')[0])); }
+        });
+      }));
+    }
+    fs.writeFileSync('last-results.json', JSON.stringify(results));
+    if (request.hold) { setInterval(() => {}, 1000); return; }
+    emit({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: 'fixture completed' }], stopReason: 'stop' } });
+    emit({ type: 'agent_end', messages: [] });
+  } catch { process.exitCode = 1; }
+});

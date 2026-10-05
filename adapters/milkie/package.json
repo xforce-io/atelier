@@ -1,0 +1,24 @@
+{
+  "name": "@atelier/milkie-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare:milkie": "node prepare-dependency.mjs",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/main.js",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "test:isolation": "npm run build && node --test dist/test/isolation.live.js",
+    "test:cli-container": "npm run build && node --test dist/test/cli-container.live.js",
+    "test:cli-login": "npm run build && node --test dist/test/cli-login.live.js",
+    "test:cli-runtime": "npm run build && node --test dist/test/cli-runtime.live.js"
+  },
+  "dependencies": {
+    "@freemanxu/milkie": "file:vendor/milkie-a8e4ea9a65550e27af07ca6b25c2cf0d30e3a0e4.tgz",
+    "ajv": "8.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.41",
+    "typescript": "5.9.3"
+  }
+}
