@@ -2,7 +2,7 @@
 
 - 一律使用简体中文。
 - 术语以 `docs/glossary.md` 为准；新增领域术语时同步维护名词表。
-- 项目首个 feature 正在实现，基础 CLI 已可运行，完整异步团队尚未交付；不将设计目标、局部测试或未运行验收描述为已实现/已验证能力。
+- 项目首个 feature（Issue #1）已通过 CLI 与 Skill 完整异步团队验收，并经 PR #2 合入 main；交付范围及证据边界见 docs/implementation/1-first-team-delivery.md。后续变更仍须独立验证，不将设计目标、局部测试或未运行验收描述为已实现/已验证能力。
 - 采用新版 keel 两层设计：L1 产品设计定义完整路径、规则及第 8 节逐项验收；L2 技术设计引用明确 L1 版本定义实现契约。两层不再各分概要/详细。
 - `docs/overview.md` 保留项目方向，不替代 Issue 的 L1；新设计默认放在 `docs/design/{issue}-{slug}/product.md` 与 `technical.md`，Issue 只放范围、验收汇总与设计摘要链接。每个 feature 仅维护这两份当前设计；旧稿由 Git 历史保存，不另建跳转文档或未来版本副本。
 - Issue S 与 L1.8 稳定子项、L2.8 测试及应用功能地图保持关联；标准与实际验证结果分开，缺环境或未运行不得标为通过。

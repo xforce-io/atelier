@@ -1,6 +1,6 @@
 # milkie 接入与出站代理（开发中）
 
-该目录提供 Atelier 的 TypeScript API/CLI 单次执行适配与持久工具调用账本。任务、成员身份、权限、消息领取和业务状态仍归 Rust 核心；私有 JSON Lines 通道已接到绑定的 Rust 成员入口，并通过真实 Node 子进程集成测试；生产服务已装配、启动和核对 API 接入进程，真实模型与完整团队验收仍未通过。
+该目录提供 Atelier 的 TypeScript API/CLI 单次执行适配与持久工具调用账本。任务、成员身份、权限、消息领取和业务状态仍归 Rust 核心；私有 JSON Lines 通道已接到绑定的 Rust 成员入口，并通过真实 Node 子进程集成测试；生产服务已装配、启动和核对 API 接入进程，真实 API、Pi 与 Grok 路径及 CLI/Skill 团队交付已完成 Issue #1 验收，最终结果与证据版本边界见 [实现记录](../../docs/implementation/1-first-team-delivery.md)。
 
 ## 固定依赖
 
@@ -85,7 +85,9 @@ npm run test:isolation
 2026-10-02 再次核对 milkie 远端 main 仍为 `7865ffcc14a8359a055e5e6e0998b56ab2160379`，#263 未关闭且相邻工作区实现未提交；草稿仅有标准/只读原生工具模式，未提供本项目必需的受控工具回调及隔离启动入口。本组件不消费该草稿，也不私造原生 CLI 协议。CLI 镜像、Worker 专用登录、原生会话卷、Run 资源账本及完整执行接线仍需完成。
 
 
-## CLI 接入开发进度（2026-10-03）
+## CLI 接入开发进度（2026-10-03 历史记录）
+
+本节保留当时的接线与验证边界；后续完整路径已交付，最终状态见本文开头及实现记录。
 
 `cli-tools.ts` 保留完整工具 schema，只补充 enum/const 隐含类型，并通过 Ajv 在回调边界执行完整校验。`cli-turn.ts` 通过真实 ExecutionClient 串行转交获准调用，以稳定 callId 关联操作账本；先核对旧调用再续接，未曾转交核心的排队调用不会在恢复时首次执行。未知资源不能作为正常结束，丢失核心回复后停止 CLI，避免生成替代调用。
 
@@ -105,7 +107,7 @@ npm run test:cli-container
 
 脚本仅复制显式应用文件、固定 milkie 包与指定二进制到构建上下文，固定 Node 基础镜像和 Pi 0.85.1，并核对 Grok 二进制摘要。结果写入忽略的 `.cache/cli-image.json`，以镜像 digest 使用；脚本不导入任何登录或会话，仍为开发构建入口。
 
-Rust `connection prepare` 核对上述本地固定镜像，并为指定 Worker/连接版本建立私有存储；`connection show` 可查持久准备结果。该入口尚不代替镜像构建脚本，专用 `connection login` 已接 TTY 容器、持久请求与中断资源核对，运行服务已接线，原生账号认证与模型业务仍待验证。准备结果明确为 `prepared_not_authenticated`，没有认证或模型成功含义。
+Rust `connection prepare` 核对上述本地固定镜像，并为指定 Worker/连接版本建立私有存储；`connection show` 可查持久准备结果。该入口尚不代替镜像构建脚本，专用 `connection login` 已接 TTY 容器、持久请求与中断资源核对，运行服务已接线，Pi 与 Grok 原生账号认证及模型业务已有验收证据，新环境仍须独立检查。准备结果明确为 `prepared_not_authenticated`，没有认证或模型成功含义。
 
 `cli-container-main.js` 是可信宿主启动器，第一行私有输入携带核心已登记的 Run/工作区/归属、Docker 引擎、固定镜像、目录及批准域名，随后透传成员通道。仅创建具有归属标签的执行容器、代理与两个网络，核对非 root、只读根目录与受限挂载，成员容器不接出站网络。启动器不删除资源；核心须先登记其进程，再交付创建参数，停止时须核对其进程组消失并按资源身份清理。
 

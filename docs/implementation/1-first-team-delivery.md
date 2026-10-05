@@ -1,12 +1,16 @@
 # Issue #1 实现记录
 
-日期：2026-10-04。模式：end-to-end；当前阶段：implementation / verify；状态：进行中，未完成全量验收、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结最终验收候选。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
-
-当前依据为 L1 v0.10 / L2 v0.23，代码检查点 `dce0cf1` 的 [CI 37193684292](https://github.com/xforce-io/atelier/actions/runs/37193684292) 已通过（159 项 Rust、58 项 TypeScript、格式与 Clippy；13 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **55 项齐备、3 项仍待补分支或核对**，不代表 Story 全量通过。最新报告任务的 HTTP 402 已在用户充值后恢复；原上下文续接仍触发 milkie #273 的空 assistant 消息 HTTP 400，详见末节。
+当前状态（2026-10-05）：Issue #1 已完成验收及独立审查，并通过 [PR #2](https://github.com/xforce-io/atelier/pull/2) 合入 main，Issue 已关闭。设计依据 L1 v0.10 / L2 v0.28；交付候选 `ad134f2f984b830f1e8ebc3743a1a94d28987f4f`，合入提交 `308a953bcce504845fcef7365e0654ff6fc90e0f`，两者 tree 一致。58/58 必需验收子项及要求分支闭合，独立审查覆盖 124/124 文件，PASS，无未决 P0–P2；最终结果及证据边界见本文末节。
 
 以下保留各阶段历史检查点，其中“未实现”“未验证”和测试数量均属于对应阶段；当前状态以最新日期记录为准。
 
 设计依据为 [L1 v0.10](../design/1-first-team-delivery/product.md) 与 [L2 v0.10](../design/1-first-team-delivery/technical.md)，均为 2026-10-01 修订。L1 复用此前逐轮讨论确认的产品范围；用户在 Issue 同步后回复“go”，本次据此进入开发。L2 补齐 pending 配置刷新、消息处理终局、跨 Run 操作去重的规则；未自行批准设计或减少验收。`keel-how` 按“无现成机制可讲”跳过。
+
+## 历史开发状态（2026-10-04）
+
+日期：2026-10-04。模式：end-to-end；当前阶段：implementation / verify；状态：进行中，未完成全量验收、未送独立审查。分支 `feat/1-first-team-delivery`；当前成果保存为开发检查点，尚未冻结最终验收候选。关联 [Issue #1](https://github.com/xforce-io/atelier/issues/1)。
+
+当前依据为 L1 v0.10 / L2 v0.23，代码检查点 `dce0cf1` 的 [CI 37193684292](https://github.com/xforce-io/atelier/actions/runs/37193684292) 已通过（159 项 Rust、58 项 TypeScript、格式与 Clippy；13 项环境测试默认 ignored）。真实 DeepSeek API、Pi、Grok 的正常业务链路及两种 CLI 的失败返工续接均已有历史证据；首个游戏已明确验收关闭，其余交付决定保持待办。当前逐项开发证据为 **55 项齐备、3 项仍待补分支或核对**，不代表 Story 全量通过。最新报告任务的 HTTP 402 已在用户充值后恢复；原上下文续接仍触发 milkie #273 的空 assistant 消息 HTTP 400，详见末节。
 
 ## 已有实现
 
@@ -949,3 +953,16 @@ S4.A2的CLI与Skill真实拒绝、返工和新版接受路径均已闭合。当�
 固定提交快照的 SDK execution 76项、当前 Atelier TypeScript 66项、Rust 161项（13项环境测试 ignored）、格式与 Clippy、container/login/runtime 三项 Docker 接线回归均通过。三项接线使用协议替身，不冒充真实模型。旧/新 SDK 包的456个 dist 产物中451个摘要相同，变化仅在execution/adapters及execution/worker相关产物；API历史证据保留原版本，代码同一性只支持适用性核对，不改签成新API运行。
 
 脱敏证据位于本地 `.agents/verify-runs/1/`：`milkie-275-fixed-native-budget-trace.json`、`milkie-275-fixed-artifact-diff.json` 及对应原始日志。旧独立审查保留 BLOCKED 原文；用户本轮明确要求继续完成，正在对当前候选补审剩余8个文件、相对旧目标的修复增量和58项逐分支原始证据。不提前标记独立PASS、Story验收或合入完成。
+
+
+## 2026-10-05：最终验收、独立审查与合入完成
+
+CLI 与实际 Skill 宿主的正常新版、两条基线缺陷返工链均完成固定产出的断网游玩和人类验收。两条缺陷链分别为独立检验失败 15/19 → 成员决定返工 → 新版独立重验 19/19 → 本人明确接受 → Task closed/accepted；各 9 次 Run 全部 stopped，返工次数保持 1，投递全部 handled/cancelled。旧失败与拒绝记录保留。
+
+固定候选 `ad134f2f984b830f1e8ebc3743a1a94d28987f4f` 的独立原生 Codex Reviewer（gpt-6.1-sol，bind-file）完成 124/124 文件及 58/58 必需子项与要求分支审计，No findings，verdict PASS，human required。此前 BLOCKED 记录作为历史保留，后续修复和补证已闭合其发现及覆盖缺口。最终审查原文为本地 `.agents/verify-runs/1/independent-review-a8-final.md`，逐项结果与证据索引见 [PR #2](https://github.com/xforce-io/atelier/pull/2)。
+
+同候选的人工条件合入授权已记录，keel check PASS，PR 检查通过；2026-10-05 北京时间 08:44 合入 main，提交 `308a953bcce504845fcef7365e0654ff6fc90e0f`。合入 tree 与审查候选一致，Issue #1 已关闭，[主分支 CI](https://github.com/xforce-io/atelier/actions/runs/37248684156) 成功。项目无线上部署阶段，截至本次核对未发布 GitHub Release。
+
+交付检查结果为 SDK execution 76 项、Atelier TypeScript 66 项、Rust 161 项、格式与 Clippy及三项 Docker 接线回归通过。13 项环境测试默认 ignored，实际执行和适用性单独核对；接线协议替身不作为真实模型证据。历史真实模型证据保留原候选、SDK 和镜像，通过代码同一性、受影响回归及新组件检查核对适用性，不改签成最新镜像全量团队重跑。本次文档同步未重新运行这些测试。
+
+当前固定消费 milkie `a8e4ea9a65550e27af07ca6b25c2cf0d30e3a0e4`；截至本次核对，上游 [PR #276](https://github.com/xforce-io/milkie/pull/276) 仍开放。后续依赖更新须重新核对诊断、镜像和受影响证据。GPUI 桌面入口、远程多人、多执行并行、组织学习与 RSI 均不属于本次交付。
