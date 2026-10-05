@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { JsonlEventStore, SQLiteStore, assembleApiGateway, resolveAndParseConnection, type AgentCheckpoint, type ToolSchema } from '@freemanxu/milkie';
 import { executeApiTurn } from './api-turn.js';
-import { ToolLedger } from './tool-ledger.js';
+import { ledgerHasCompletedEffect, ToolLedger } from './tool-ledger.js';
 import { AdapterChannel, type Scope, type Terminal } from './channel.js';
 
 export interface RunStart {
@@ -86,13 +86,18 @@ export async function prepareContext(start:Start,scope:Scope):Promise<{store:SQL
     let checkpoint:AgentCheckpoint|undefined;
     if(start.resume) {
       const previous=await store.get(`context:${start.contextId}:checkpoint-run:latest`);
-      if(!identifier(previous))throw new Error('native_checkpoint_missing');
-      const eventFile=join(eventPath,previous+'.jsonl');
-      const stat=await fs.lstat(eventFile);
-      if(!stat.isFile()||stat.isSymbolicLink()||stat.size>64*1024*1024)throw new Error('native_checkpoint_file_invalid');
-      const event=(await events.readByRunId(previous)).filter(item=>item.type==='agent.checkpoint').at(-1);
-      checkpoint=(event?.payload as {checkpoint?:AgentCheckpoint}|undefined)?.checkpoint;
-      if(!checkpoint||checkpoint.meta.contextId!==start.contextId||checkpoint.meta.agentId!==start.workerId)throw new Error('native_checkpoint_binding_mismatch');
+      if(!identifier(previous)) {
+        // A launch can be marked used before any checkpoint exists. Continue
+        // the same binding only when no tool result was committed.
+        if(await ledgerHasCompletedEffect(start.ledgerDirectory)) throw new Error('native_checkpoint_missing');
+      } else {
+        const eventFile=join(eventPath,previous+'.jsonl');
+        const stat=await fs.lstat(eventFile);
+        if(!stat.isFile()||stat.isSymbolicLink()||stat.size>64*1024*1024)throw new Error('native_checkpoint_file_invalid');
+        const event=(await events.readByRunId(previous)).filter(item=>item.type==='agent.checkpoint').at(-1);
+        checkpoint=(event?.payload as {checkpoint?:AgentCheckpoint}|undefined)?.checkpoint;
+        if(!checkpoint||checkpoint.meta.contextId!==start.contextId||checkpoint.meta.agentId!==start.workerId)throw new Error('native_checkpoint_binding_mismatch');
+      }
     }
     return {store,events,checkpoint};
   } catch(error) {store.close();throw error;}

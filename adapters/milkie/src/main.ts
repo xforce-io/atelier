@@ -1,4 +1,4 @@
-import { AdapterChannel } from './channel.js';
+import { AdapterChannel, adapterFailureTerminal } from './channel.js';
 import { runApiProcess } from './api-process.js';
 import { runCliProcess } from './cli-process.js';
 
@@ -13,8 +13,8 @@ try {
   channel=await AdapterChannel.connect(process.stdin,process.stdout);
   if(channel.transport==='agent-cli') await runCliProcess(channel);
   else await runApiProcess(channel);
-} catch {
-  if(channel)await channel.finish({stopReason:'failed',stopCode:'ADAPTER_FAILED',nativeStopReason:'runtime_error',recoveredOperations:0}).catch(()=>{});
+} catch (error) {
+  if(channel)await channel.finish(adapterFailureTerminal(error)).catch(()=>{});
   process.stderr.write('Atelier adapter failed; inspect bound run and private state.\n');
   process.exitCode=1;
   process.stdin.destroy();
