@@ -32,6 +32,9 @@ pub enum Permission {
     #[serde(rename = "task.verify")]
     #[value(name = "task.verify")]
     Verify,
+    #[serde(rename = "task.deploy")]
+    #[value(name = "task.deploy")]
+    Deploy,
     #[serde(rename = "task.handoff")]
     #[value(name = "task.handoff")]
     Handoff,
@@ -51,6 +54,8 @@ pub struct Team {
     pub leader: String,
     pub executor: Option<String>,
     pub verifier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deployer: Option<String>,
     pub acceptor: String,
     pub grants: BTreeMap<String, Vec<Permission>>,
     pub revision: u64,
@@ -131,6 +136,8 @@ pub struct TeamPatch {
     pub leader: String,
     pub executor: Option<String>,
     pub verifier: Option<String>,
+    #[serde(default)]
+    pub deployer: Option<String>,
     pub grants: BTreeMap<String, Vec<Permission>>,
 }
 
@@ -144,6 +151,8 @@ pub struct Task {
     pub team_snapshot: Team,
     pub worker_snapshots: BTreeMap<String, Worker>,
     pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deploy: Option<DeployRecord>,
     pub cancellation_requested: bool,
     pub outcome: Option<String>,
     pub owner: Option<String>,
@@ -174,6 +183,20 @@ pub struct Run {
     pub stop_reason: Option<String>,
     pub pid: Option<u32>,
     pub process_identity: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeployRecord {
+    pub state: String,
+    pub acceptance_id: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, clap::ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum DeployResult {
+    Succeeded,
+    Failed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, clap::ValueEnum)]
@@ -295,6 +318,12 @@ pub enum Command {
         id: String,
         revision: u64,
         instruction: String,
+    },
+    DeployReport {
+        id: String,
+        revision: u64,
+        result: DeployResult,
+        reason: String,
     },
     CredentialSet {
         id: String,

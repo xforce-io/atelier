@@ -52,6 +52,7 @@ fn required_permission(purpose: &str) -> Permission {
     match purpose {
         "execute" | "rework" => Permission::Execute,
         "verify" => Permission::Verify,
+        "deploy" => Permission::Deploy,
         _ => Permission::Communicate,
     }
 }
@@ -294,6 +295,7 @@ impl Store {
         let purpose = match kind.as_str() {
             "assignment.execute" => "execute",
             "assignment.rework" => "rework",
+            "assignment.deploy" => "deploy",
             "handoff.verify" => "verify",
             "intake" | "intake.updated" | "work.note" | "work.question" | "result" | "failure"
             | "blocker" | "resolved" | "decision.request" | "decision.result" => "coordinate",
@@ -310,6 +312,7 @@ impl Store {
                 task.team_snapshot.executor.as_deref() == Some(receiver.as_str())
             }
             "verify" => task.team_snapshot.verifier.as_deref() == Some(receiver.as_str()),
+            "deploy" => task.team_snapshot.deployer.as_deref() == Some(receiver.as_str()),
             _ => participants(&task).contains(&receiver.as_str()),
         };
         if !has_role {
@@ -322,6 +325,11 @@ impl Store {
         }
         if purpose == "verify" {
             crate::handoff::claimable(&tx, &task, delivery_id)?;
+        }
+        if purpose == "deploy"
+            && task.deploy.as_ref().map(|record| record.state.as_str()) != Some("open")
+        {
+            return Err(Error::Conflict("部署尚未开放".into()));
         }
         let current: Team = load(&tx, "teams", &task.team_id)?;
         for permission in [Permission::Communicate, required_permission(purpose)] {

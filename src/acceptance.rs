@@ -191,7 +191,12 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
                 handler: human,
                 kind: "acceptance".into(),
                 question: summary.into(),
-                impact: "接受将关闭任务；拒绝保留历史且同一产出不能重新请求验收".into(),
+                impact: if task.team_snapshot.deployer.is_some() {
+                    "接受只记录代码验收并打开部署；部署成功前不关闭任务。拒绝保留历史且同一产出不能重新请求验收"
+                } else {
+                    "接受将关闭任务；拒绝保留历史且同一产出不能重新请求验收"
+                }
+                .into(),
                 options: vec!["accept".into(), "reject".into()],
                 revision: 1,
                 state: "open".into(),
@@ -261,13 +266,23 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
             db.execute("UPDATE deliveries SET status='handled',reason=?2,revision=revision+1 WHERE id=?1 AND run_id IS NULL",params![d.request_delivery,reason])?;
             if *accept {
                 save_request(db, &d)?;
-                task.state = "closed".into();
-                task.outcome = Some("accepted".into());
-                task.revision += 1;
-                crate::decisions::supersede(db, &task.id, None, task.revision, "任务已验收关闭")?;
-                crate::blocker::supersede(db, &task.id, "任务已验收关闭")?;
-                db.execute("UPDATE deliveries SET status='cancelled',reason='任务已验收关闭',revision=revision+1 WHERE status IN ('queued','blocked') AND message_id IN (SELECT id FROM messages WHERE task_id=?1)",[&task.id])?;
-                save_task(db, &task)?;
+                if task.team_snapshot.deployer.is_some() {
+                    crate::deploy::open_after_acceptance(db, &mut task, &d.id, cause)?;
+                } else {
+                    task.state = "closed".into();
+                    task.outcome = Some("accepted".into());
+                    task.revision += 1;
+                    crate::decisions::supersede(
+                        db,
+                        &task.id,
+                        None,
+                        task.revision,
+                        "任务已验收关闭",
+                    )?;
+                    crate::blocker::supersede(db, &task.id, "任务已验收关闭")?;
+                    db.execute("UPDATE deliveries SET status='cancelled',reason='任务已验收关闭',revision=revision+1 WHERE status IN ('queued','blocked') AND message_id IN (SELECT id FROM messages WHERE task_id=?1)",[&task.id])?;
+                    save_task(db, &task)?;
+                }
             } else {
                 let leader = task.team_snapshot.leader.clone();
                 let delivery=enqueue_system(db,&mut task,cause,Message {recipient:&leader,kind:"decision.result",body:&json!({"decisionId":d.id,"kind":"acceptance","state":"rejected","artifactId":record.artifact_id,"reason":reason,"next":"由团队负责人决定返工新版并独立检验；不得重新验收同一产出"}).to_string(),reply_to:None,event:Some(&format!("acceptance-rejected:{}:{leader}",d.id)),mandatory:true})?;

@@ -3,7 +3,7 @@
 use crate::{
     Error, Result,
     model::{
-        Command, ContractPatch, DecisionRequest, DecisionResolution, IntakeDecision,
+        Command, ContractPatch, DecisionRequest, DecisionResolution, DeployResult, IntakeDecision,
         OperationReference, Permission, Run, Task, Team,
     },
     runs::{check_run_authority, service},
@@ -76,6 +76,7 @@ enum MemberCommand {
     TaskUpdate(UpdateTask),
     TaskIntake(Intake),
     TaskArrange(Arrange),
+    TaskDeploy(ReportDeploy),
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -186,6 +187,13 @@ struct UpdateTask {
     delivery: Option<String>,
     verification: Option<String>,
     decision_id: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ReportDeploy {
+    revision: u64,
+    result: DeployResult,
+    reason: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -633,6 +641,32 @@ fn member_effect(
                 input.handoff.as_deref(),
             );
         }
+        MemberCommand::TaskDeploy(input) => {
+            if run.purpose != "deploy"
+                || task.team_snapshot.deployer.as_deref() != Some(run.worker_id.as_str())
+                || !run.permissions.contains(&Permission::Deploy)
+            {
+                return Err(Error::Forbidden(
+                    "只有冻结部署成员的部署运行可以提交部署结果".into(),
+                ));
+            }
+            let result = apply(
+                db,
+                &run.worker_id,
+                &operation.operation_id,
+                &Command::DeployReport {
+                    id: task.id.clone(),
+                    revision: input.revision,
+                    result: input.result,
+                    reason: input.reason,
+                },
+            )?;
+            let current: Task = load(db, "tasks", &task.id)?;
+            let mut updated = run.clone();
+            updated.task_revision = current.revision;
+            crate::runs::save(db, &updated)?;
+            return Ok(result);
+        }
         MemberCommand::TaskArrange(input) => {
             authorize_intake(db, run, task)?;
             if (input.blocker_id.is_some() || input.verification_id.is_some())
@@ -856,7 +890,7 @@ fn member_effect(
             return Ok(
                 json!({"id":task.id,"goal":task.goal,"state":task.state,"revision":task.revision,
                 "decisions":decisions,"deliveries":crate::retry::list(db,task,&run.worker_id)?,"blockers":crate::blocker::list(db,&task.id)?,"assignments":crate::assignment::list(db,&task.id)?,"reworks":crate::rework::list(db,&task.id)?,"currentArtifact":task.current_artifact,"handoffs":crate::handoff::list(db,&task.id)?,
-                "contract":task.contract,"verificationProfile":verification_profile,"checks":checks,"responsibilities":{"leader":task.team_snapshot.leader,"executor":task.team_snapshot.executor,"verifier":task.team_snapshot.verifier,"acceptor":task.team_snapshot.acceptor},
+                "contract":task.contract,"verificationProfile":verification_profile,"checks":checks,"deploy":task.deploy,"responsibilities":{"leader":task.team_snapshot.leader,"executor":task.team_snapshot.executor,"verifier":task.team_snapshot.verifier,"deployer":task.team_snapshot.deployer,"acceptor":task.team_snapshot.acceptor},
                 "budget":{"runsUsed":task.runs_used,"messagesUsed":task.messages_used,"reworksUsed":task.reworks_used,"reworksReserved":crate::rework::reserved(db,&task.id)?}}),
             );
         }

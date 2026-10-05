@@ -42,6 +42,7 @@ impl Fixture {
             leader: members[usize::from(digital_leader)].clone(),
             executor: Some(members[2].clone()),
             verifier: Some(members[3].clone()),
+            deployer: None,
             acceptor: human.clone(),
             members,
             grants: BTreeMap::new(),
@@ -277,6 +278,7 @@ fn pending_refresh_is_explicit_and_preserves_used_budget() {
         leader: f.team.leader.clone(),
         executor: f.team.executor.clone(),
         verifier: f.team.verifier.clone(),
+        deployer: None,
         grants: BTreeMap::new(),
     };
     f.store
@@ -447,6 +449,7 @@ fn configuration_change_does_not_change_accepted_task_snapshot() {
         leader: f.human.clone(),
         executor: f.team.verifier.clone(),
         verifier: f.team.executor.clone(),
+        deployer: None,
         grants: BTreeMap::new(),
     };
     f.store
@@ -474,6 +477,7 @@ fn configuration_change_does_not_change_accepted_task_snapshot() {
         leader: f.team.executor.unwrap(),
         executor: None,
         verifier: None,
+        deployer: None,
         grants: BTreeMap::new(),
     };
     assert!(matches!(
@@ -12166,5 +12170,325 @@ fn cli_network_proxy_is_explicit_validated_and_frozen_with_the_run() {
             .unwrap()
             .egress_proxy,
         Some(route)
+    );
+}
+
+fn add_deployer(f: &mut Fixture, grant: bool) -> (String, String) {
+    use atelier::connection::{ApiProtocol, ConnectionSpec};
+    let named = f
+        .store
+        .execute(
+            "named-ops",
+            &Command::WorkerCreate {
+                connection: None,
+                name: "运维".into(),
+                description: String::new(),
+            },
+        )
+        .unwrap();
+    let created = f
+        .store
+        .execute(
+            "deployer",
+            &Command::WorkerCreate {
+                connection: None,
+                name: "发布".into(),
+                description: String::new(),
+            },
+        )
+        .unwrap();
+    let deployer = created["id"].as_str().unwrap().to_string();
+    let connection = f
+        .store
+        .execute(
+            "deploy-connection",
+            &Command::ConnectionCreate {
+                name: "部署测试配置".into(),
+                specification: ConnectionSpec::Api {
+                    protocol: ApiProtocol::OpenaiChatCompletions,
+                    model: "fixture".into(),
+                    base_url: Some("https://example.invalid/v1".into()),
+                },
+            },
+        )
+        .unwrap();
+    let configured = f
+        .store
+        .execute(
+            "deploy-config",
+            &Command::WorkerUpdate {
+                id: deployer.clone(),
+                revision: 1,
+                name: None,
+                description: None,
+                connection: Some(connection["connection"]["id"].as_str().unwrap().into()),
+                clear_connection: false,
+            },
+        )
+        .unwrap();
+    let mut members = f.team.members.clone();
+    members.push(named["id"].as_str().unwrap().to_string());
+    members.push(deployer.clone());
+    f.store
+        .execute(
+            "deploy-duty",
+            &Command::TeamUpdate {
+                patch: TeamPatch {
+                    id: f.team.id.clone(),
+                    revision: f.store.team(&f.team.id).unwrap().revision,
+                    name: f.team.name.clone(),
+                    members,
+                    leader: f.team.leader.clone(),
+                    executor: f.team.executor.clone(),
+                    verifier: f.team.verifier.clone(),
+                    deployer: Some(deployer.clone()),
+                    grants: BTreeMap::new(),
+                },
+            },
+        )
+        .unwrap();
+    if grant {
+        f.store
+            .execute(
+                "deploy-grant",
+                &Command::PermissionsUpdate {
+                    decision_id: None,
+                    team_id: f.team.id.clone(),
+                    revision: f.store.team(&f.team.id).unwrap().revision,
+                    grant: BTreeMap::from([(
+                        deployer.clone(),
+                        vec![Permission::Deploy, Permission::Communicate],
+                    )]),
+                    revoke: BTreeMap::new(),
+                },
+            )
+            .unwrap();
+    }
+    let team = f.store.team(&f.team.id).unwrap();
+    assert_eq!(team.deployer.as_deref(), Some(deployer.as_str()));
+    assert_ne!(team.deployer.as_deref(), named["id"].as_str());
+    (
+        deployer,
+        configured["execution_config"].as_str().unwrap().to_string(),
+    )
+}
+
+fn accept_for_deploy(f: &mut Fixture) -> (atelier::verification::Verification, Value) {
+    let (run, verification) = f.acceptance_fixture();
+    f.store
+        .runtime_run_observed_stopped("service", &run.id, "fixture resources stopped")
+        .unwrap();
+    let request = f.acceptance_request(&verification);
+    let accepted = f
+        .store
+        .execute(
+            "accept-code",
+            &acceptance_decide(&verification, &request, true),
+        )
+        .unwrap();
+    (verification, accepted)
+}
+
+#[test]
+fn deploy_duty_is_explicit_and_cannot_fold_into_execution_or_verification() {
+    let mut f = Fixture::new(false);
+    let folded = TeamPatch {
+        id: f.team.id.clone(),
+        revision: 1,
+        name: f.team.name.clone(),
+        members: f.team.members.clone(),
+        leader: f.team.leader.clone(),
+        executor: f.team.executor.clone(),
+        verifier: f.team.verifier.clone(),
+        deployer: f.team.executor.clone(),
+        grants: BTreeMap::new(),
+    };
+    let rejected = f
+        .store
+        .execute("fold", &Command::TeamUpdate { patch: folded });
+    assert!(
+        matches!(rejected, Err(Error::Invalid(ref message)) if message.contains("部署职责不能并入执行或检验")),
+        "{rejected:?}"
+    );
+    let human = TeamPatch {
+        id: f.team.id.clone(),
+        revision: 1,
+        name: f.team.name.clone(),
+        members: f.team.members.clone(),
+        leader: f.team.leader.clone(),
+        executor: f.team.executor.clone(),
+        verifier: f.team.verifier.clone(),
+        deployer: Some(f.human.clone()),
+        grants: BTreeMap::new(),
+    };
+    let updated = f
+        .store
+        .execute("human-deployer", &Command::TeamUpdate { patch: human })
+        .unwrap();
+    assert_eq!(updated["deployer"], f.human.as_str());
+    assert_ne!(updated["name"], "运维");
+}
+
+#[test]
+fn missing_deploy_grant_records_acceptance_without_closing_or_delivering() {
+    let mut f = Fixture::new(false);
+    let (deployer, _) = add_deployer(&mut f, false);
+    let (verification, accepted) = accept_for_deploy(&mut f);
+    assert_eq!(accepted["task"]["state"], "active");
+    assert!(accepted["task"]["outcome"].is_null());
+    assert_eq!(accepted["task"]["deploy"]["state"], "blocked");
+    assert!(accepted["acceptance"]["accepted"].as_bool().unwrap());
+    assert_eq!(f.store.task(&verification.task_id).unwrap().outcome, None);
+    assert!(
+        f.store
+            .mailbox(Some(&deployer))
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["message"]["kind"] != "assignment.deploy")
+    );
+}
+
+#[test]
+fn deploy_success_closes_separately_from_acceptance() {
+    let mut f = Fixture::new(false);
+    let (deployer, configuration) = add_deployer(&mut f, true);
+    let (verification, accepted) = accept_for_deploy(&mut f);
+    assert_eq!(accepted["task"]["state"], "active");
+    assert!(accepted["task"]["outcome"].is_null());
+    assert_eq!(accepted["acceptance"]["accepted"], true);
+    let impersonated = f.store.execute(
+        "impersonate-deploy",
+        &Command::DeployReport {
+            id: verification.task_id.clone(),
+            revision: accepted["task"]["revision"].as_u64().unwrap(),
+            result: DeployResult::Succeeded,
+            reason: "管理身份不能代报".into(),
+        },
+    );
+    assert!(
+        matches!(impersonated, Err(Error::Forbidden(_))),
+        "{impersonated:?}"
+    );
+    let delivery = f
+        .store
+        .mailbox(Some(&deployer))
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["message"]["kind"] == "assignment.deploy")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let run = f
+        .store
+        .runtime_claim("service", &delivery, &configuration)
+        .unwrap();
+    assert_eq!(run.purpose, "deploy");
+    assert_eq!(run.worker_id, deployer);
+    f.store.runtime_begin_launch("service", &run.id).unwrap();
+    let run = f
+        .store
+        .runtime_child_started("service", &run.id, 321, "fixture-deployer")
+        .unwrap();
+    let binding = f.store.bind_member("service", &run.id).unwrap();
+    let reported = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(
+                &run,
+                "deploy",
+                "task_deploy",
+                json!({
+                    "revision": accepted["task"]["revision"].as_u64().unwrap(),
+                    "result": "succeeded",
+                    "reason": "fixture deploy record"
+                }),
+            ),
+        )
+        .unwrap();
+    assert_eq!(reported["ok"], true, "{reported}");
+    let task = f.store.task(&verification.task_id).unwrap();
+    assert_eq!(task.state, "closed");
+    assert_eq!(task.outcome.as_deref(), Some("deployed"));
+    assert_eq!(task.deploy.as_ref().unwrap().state, "succeeded");
+    let record = f
+        .store
+        .acceptance_decision(&task.deploy.as_ref().unwrap().acceptance_id)
+        .unwrap();
+    assert!(record.accepted);
+    assert_ne!(task.outcome.as_deref(), Some("accepted"));
+}
+
+#[test]
+fn deploy_failure_keeps_the_task_unfinished() {
+    let mut f = Fixture::new(false);
+    let (deployer, configuration) = add_deployer(&mut f, true);
+    let (verification, accepted) = accept_for_deploy(&mut f);
+    let delivery = f
+        .store
+        .mailbox(Some(&deployer))
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["message"]["kind"] == "assignment.deploy")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let run = f
+        .store
+        .runtime_claim("service", &delivery, &configuration)
+        .unwrap();
+    f.store.runtime_begin_launch("service", &run.id).unwrap();
+    let run = f
+        .store
+        .runtime_child_started("service", &run.id, 321, "fixture-deploy-failure")
+        .unwrap();
+    let binding = f.store.bind_member("service", &run.id).unwrap();
+    let revision = accepted["task"]["revision"].as_u64().unwrap();
+    let reported = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(
+                &run,
+                "deploy-fail",
+                "task_deploy",
+                json!({"revision": revision, "result": "failed", "reason": "fixture deploy failed"}),
+            ),
+        )
+        .unwrap();
+    assert_eq!(reported["ok"], true, "{reported}");
+    let task = f.store.task(&verification.task_id).unwrap();
+    assert_eq!(task.state, "active");
+    assert_eq!(task.outcome, None);
+    assert_eq!(task.deploy.as_ref().unwrap().state, "failed");
+    let again = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(
+                &run,
+                "deploy-again",
+                "task_deploy",
+                json!({"revision": task.revision, "result": "succeeded", "reason": "second try"}),
+            ),
+        )
+        .unwrap();
+    assert_eq!(again["ok"], false, "{again}");
+    assert_eq!(f.store.task(&verification.task_id).unwrap().state, "active");
+    let leader = f.store.mailbox(Some(&f.team.leader)).unwrap();
+    assert!(
+        leader
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["message"]["kind"] == "failure")
     );
 }

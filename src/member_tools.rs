@@ -142,6 +142,19 @@ pub(crate) fn describe(run: &Run, task: &Task) -> Result<Value> {
             tool("task_intake","负责人对 pending 任务作接受、等待或拒绝决定。接受后继续负有安排或等待责任，不等于投递完成或任务验收。",object(json!({"revision":revision,"decision":{"enum":["accept","wait","decline"]},"reason":text}),&["revision","decision","reason"])),
         ]);
     }
+    if run.purpose == "deploy"
+        && task.team_snapshot.deployer.as_deref() == Some(run.worker_id.as_str())
+        && run.permissions.contains(&Permission::Deploy)
+    {
+        tools.push(tool(
+            "task_deploy",
+            "提交本次部署结果。succeeded 后任务关闭且 outcome 为 deployed；failed 保持任务未完成，不自动重试。核心不执行 compose、不合入、不 push。结果与验收记录分开保存。",
+            object(
+                json!({"revision":revision,"result":{"enum":["succeeded","failed"]},"reason":text}),
+                &["revision", "result", "reason"],
+            ),
+        ));
+    }
     if matches!(run.purpose.as_str(), "execute" | "rework")
         && run.permissions.contains(&Permission::Execute)
     {

@@ -710,6 +710,16 @@ pub(crate) fn participants(task: &Task) -> Vec<&str> {
         members.extend(t.executor.as_deref());
         members.extend(t.verifier.as_deref());
     }
+    if let Some(deployer) = t.deployer.as_deref() {
+        if task
+            .deploy
+            .as_ref()
+            .is_some_and(|record| record.state == "open" || record.state == "failed")
+            && !members.contains(&deployer)
+        {
+            members.push(deployer);
+        }
+    }
     members
 }
 
@@ -732,6 +742,7 @@ fn validate_team(db: &Connection, team: &Team, actor: &str) -> Result<()> {
         Some(&team.acceptor),
         team.executor.as_ref(),
         team.verifier.as_ref(),
+        team.deployer.as_ref(),
     ]
     .into_iter()
     .flatten()
@@ -745,6 +756,15 @@ fn validate_team(db: &Connection, team: &Team, actor: &str) -> Result<()> {
     }
     if team.executor.is_some() && team.executor == team.verifier {
         return Err(Error::Invalid("执行者与检验者必须独立".into()));
+    }
+    if let Some(deployer) = &team.deployer {
+        if team.executor.as_ref() == Some(deployer) || team.verifier.as_ref() == Some(deployer) {
+            return Err(Error::Invalid("部署职责不能并入执行或检验".into()));
+        }
+        let worker: Worker = load(db, "workers", deployer)?;
+        if worker.kind == WorkerKind::Human && deployer.as_str() != actor {
+            return Err(Error::Invalid("人类部署成员只能是本机本人".into()));
+        }
     }
     for worker in team.grants.keys() {
         if !team.members.contains(worker) {
@@ -974,6 +994,9 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
             if patch.verifier.is_some() {
                 team.verifier = patch.verifier.clone();
             }
+            if patch.deployer.is_some() {
+                team.deployer = patch.deployer.clone();
+            }
             for (id, grants) in &patch.grants {
                 let permissions = team.grants.entry(id.clone()).or_default();
                 for p in grants {
@@ -1092,6 +1115,7 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
                 worker_snapshots: snapshot_workers(db, &team)?,
                 team_snapshot: team,
                 state: "pending".into(),
+                deploy: None,
                 cancellation_requested: false,
                 outcome: None,
                 owner: None,
@@ -1345,6 +1369,12 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
             )?;
             Ok(json!({"id":id,"revision":version+1,"status":"handled","reason":reason}))
         }
+        Command::DeployReport {
+            id,
+            revision: expected,
+            result,
+            reason,
+        } => crate::deploy::report(db, actor, id, *expected, result.clone(), reason),
         Command::TaskCancel {
             id,
             revision: expected,

@@ -186,6 +186,7 @@ mod tests {
                         leader: leader.clone(),
                         executor: None,
                         verifier: None,
+                        deployer: None,
                         acceptor: human.clone(),
                         members: vec![human, leader.clone()],
                         grants: BTreeMap::new(),
