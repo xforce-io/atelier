@@ -82,6 +82,7 @@ async fn run() -> Result<Value> {
                 leader: leader.clone(),
                 executor: Some(executor.clone()),
                 verifier: Some(verifier.clone()),
+                deployer: None,
                 acceptor: human.clone(),
                 members: vec![human.clone(), leader.clone(), executor, verifier],
                 grants: BTreeMap::from([(

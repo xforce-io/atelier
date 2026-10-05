@@ -247,7 +247,22 @@ impl Store {
                 && allowed(Permission::Accept)
                 && allowed(Permission::Communicate)
             {
-                operations.push(operation("acceptance","task accept/reject <Task> --revision <版本> --request <事项 ID> --request-revision <版本> --reason <原因> --decision-ref <脱敏决定引用>","先展示当前请求及证据，只转交用户当前明确的接受/拒绝；没有决定保持待办，旧决定不能沿用于新版。核心仍核验检查和停止状态。"));
+                let acceptance = if task.team_snapshot.deployer.is_some() {
+                    "先展示当前请求及证据，只转交用户当前明确的接受/拒绝；接受只写入验收记录并打开部署，部署成功前任务不关闭。没有决定保持待办。"
+                } else {
+                    "先展示当前请求及证据，只转交用户当前明确的接受/拒绝；没有决定保持待办，旧决定不能沿用于新版。核心仍核验检查和停止状态。"
+                };
+                operations.push(operation("acceptance","task accept/reject <Task> --revision <版本> --request <事项 ID> --request-revision <版本> --reason <原因> --decision-ref <脱敏决定引用>",acceptance));
+            }
+            if active
+                && task.team_snapshot.deployer.as_deref() == Some(actor.as_str())
+                && task
+                    .deploy
+                    .as_ref()
+                    .is_some_and(|record| record.state == "open")
+                && allowed(Permission::Deploy)
+            {
+                operations.push(operation("deploy.report","task deploy <Task> --revision <版本> --result succeeded|failed --reason <依据>","仅冻结部署成员提交部署结果。成功后任务关闭且结果为 deployed；失败保持未完成，不自动重试。核心不执行 compose、不合入、不 push。数字员工在部署运行中使用 task_deploy。"));
             }
             if active
                 && allowed(Permission::Communicate)

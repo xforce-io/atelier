@@ -276,6 +276,8 @@ struct TeamArgs {
     executor: Option<String>,
     #[arg(long)]
     verifier: Option<String>,
+    #[arg(long)]
+    deployer: Option<String>,
     /// 显式增量授权，格式 WORKER_ID:task.execute；可重复。
     #[arg(long)]
     grant: Vec<String>,
@@ -416,6 +418,15 @@ enum TaskCommand {
         artifact: String,
         #[arg(long)]
         instruction: String,
+    },
+    Deploy {
+        id: String,
+        #[arg(long)]
+        revision: u64,
+        #[arg(long)]
+        result: DeployResult,
+        #[arg(long)]
+        reason: String,
     },
     Execute {
         id: String,
@@ -741,6 +752,17 @@ fn run(cli: Cli) -> Result<Value> {
         Top::Artifact(ArtifactCommand::Export { id, destination }) => {
             return store.export_artifact(&id, &destination);
         }
+        Top::Task(TaskCommand::Deploy {
+            id,
+            revision,
+            result,
+            reason,
+        }) => Command::DeployReport {
+            id,
+            revision,
+            result,
+            reason,
+        },
         Top::Task(TaskCommand::Execute {
             id,
             revision,
@@ -970,6 +992,7 @@ fn run(cli: Cli) -> Result<Value> {
                 leader: fields.leader,
                 executor: fields.executor,
                 verifier: fields.verifier,
+                deployer: fields.deployer,
                 acceptor: store.workspace()?["self"]["id"]
                     .as_str()
                     .ok_or_else(|| Error::Invalid("本人身份缺失".into()))?
@@ -990,6 +1013,7 @@ fn run(cli: Cli) -> Result<Value> {
                 leader: fields.leader,
                 executor: fields.executor,
                 verifier: fields.verifier,
+                deployer: fields.deployer,
                 grants: grants(fields.grant)?,
             },
         },

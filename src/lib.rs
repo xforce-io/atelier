@@ -18,6 +18,7 @@ pub mod content;
 pub mod credential;
 pub mod database;
 mod decisions;
+mod deploy;
 mod dispatch;
 pub mod disposition;
 pub mod execution_context;

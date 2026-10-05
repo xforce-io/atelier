@@ -1,6 +1,6 @@
 # L2 技术设计：异步团队、成员收件箱与共同工作核心
 
-版本：v0.30，2026-10-05 修订；状态：Draft，基础实现进行中，未验收。依据：[L1 v0.10（2026-10-05 修订，含 S5.A14 与 S1.A18）](product.md)、[Issue #1](https://github.com/xforce-io/atelier/issues/1)、[Issue #8](https://github.com/xforce-io/atelier/issues/8)、[Issue #6](https://github.com/xforce-io/atelier/issues/6)、[名词表](../../glossary.md)。本版取代 v0.8 的“宿主串联前台执行命令”主干，定义目标契约；实际能力与验证情况另见 [实现记录](../../implementation/1-first-team-delivery.md)。
+版本：v0.30，2026-10-05 修订；状态：Draft，基础实现进行中，未验收。依据：[L1 v0.10（2026-10-05 修订，含 S5.A14 与 S1.A18）](product.md)、[Issue #1](https://github.com/xforce-io/atelier/issues/1)、[Issue #8](https://github.com/xforce-io/atelier/issues/8)、[Issue #6](https://github.com/xforce-io/atelier/issues/6)、[名词表](../../glossary.md)。显式部署职责的契约在 [Issue #5 L2](../5-deploy-duty/technical.md)，不改变本文件的版本。本版取代 v0.8 的“宿主串联前台执行命令”主干，定义目标契约；实际能力与验证情况另见 [实现记录](../../implementation/1-first-team-delivery.md)。
 
 本次范围来源及 Issue 旧版差异见 L1 文首修订追踪；L2 仅以 L1 v0.10 为当前设计依据。2026-10-01 线上 Issue #1 已同步范围与验收汇总，用户随后要求继续开发；三处恢复契约的规则与状态见 §9。v0.11 沿用已确认的 L1 v0.10 与全部验收，仅明确已合入的 milkie SDK、工具参数校验和 CLI 回复恢复契约；不将上游合入当作 Atelier 接入或产品验收完成。
 

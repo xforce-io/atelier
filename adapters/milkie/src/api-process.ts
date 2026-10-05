@@ -6,7 +6,7 @@ import { ledgerHasCompletedEffect, ToolLedger } from './tool-ledger.js';
 import { AdapterChannel, type Scope, type Terminal } from './channel.js';
 
 export interface RunStart {
-  workerId:string; contextId:string; configurationId:string; purposeFamily:'coordinate'|'execute'|'verify';
+  workerId:string; contextId:string; configurationId:string; purposeFamily:'coordinate'|'execute'|'verify'|'deploy';
   contextDirectory:string; ledgerDirectory:string; resume:boolean;
   goal:string; input:string; skill:string; tools:ToolSchema[];
 }
@@ -20,7 +20,7 @@ function identifier(value:unknown):value is string {return typeof value==='strin
 export function parseRunStart(value:unknown):RunStart & {connection:Record<string,unknown>} {
   const p=record(value);
   keys(p,['workerId','contextId','configurationId','purposeFamily','contextDirectory','ledgerDirectory','resume','goal','input','skill','tools','connection']);
-  if(![p.workerId,p.contextId,p.configurationId].every(identifier)||!['coordinate','execute','verify'].includes(p.purposeFamily as string)||typeof p.resume!=='boolean')throw invalid();
+  if(![p.workerId,p.contextId,p.configurationId].every(identifier)||!['coordinate','execute','verify','deploy'].includes(p.purposeFamily as string)||typeof p.resume!=='boolean')throw invalid();
   for(const field of ['contextDirectory','ledgerDirectory'])if(typeof p[field]!=='string'||!isAbsolute(p[field] as string)||(p[field] as string).includes('\0'))throw invalid();
   for(const field of ['goal','input','skill'])if(typeof p[field]!=='string'||!(p[field] as string).trim()||Buffer.byteLength(p[field] as string)>128*1024)throw invalid();
   if(!Array.isArray(p.tools)||p.tools.length>64)throw invalid();
