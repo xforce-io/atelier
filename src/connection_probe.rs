@@ -33,6 +33,8 @@ struct Record {
     state: String,
     code: String,
     http_status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
     started_at_ms: u64,
     finished_at_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -51,6 +53,8 @@ struct Outcome {
     state: String,
     code: String,
     http_status: Option<u16>,
+    #[serde(default)]
+    message: Option<String>,
 }
 impl Outcome {
     fn new(state: &str, code: &str) -> Self {
@@ -58,39 +62,56 @@ impl Outcome {
             state: state.into(),
             code: code.into(),
             http_status: None,
+            message: None,
+        }
+    }
+    fn current_binary_unreadable() -> Self {
+        Self {
+            state: "failed".into(),
+            code: "credential_unreadable".into(),
+            http_status: None,
+            message: Some(crate::credential::CURRENT_BINARY_UNREADABLE.into()),
         }
     }
     fn validate(&self) -> Result<()> {
-        let valid = match (self.state.as_str(), self.code.as_str()) {
-            ("passed", "response_received") => self.http_status.is_none(),
-            ("failed", "provider_rejected") => {
-                self.http_status.is_some_and(|s| (400..=599).contains(&s))
+        let message_ok = match self.code.as_str() {
+            "credential_unreadable" => {
+                self.message.as_deref() == Some(crate::credential::CURRENT_BINARY_UNREADABLE)
             }
-            (
-                "failed",
-                "connection_failed"
-                | "credential_missing"
-                | "credential_unavailable"
-                | "adapter_unavailable"
-                | "cli_environment_unavailable"
-                | "cli_login_required"
-                | "cli_environment_changed"
-                | "cli_tool_unverified"
-                | "cli_native_failed",
-            )
-            | ("passed", "cli_tool_roundtrip")
-            | (
-                "inconclusive",
-                "invalid_response"
-                | "deadline"
-                | "cancelled"
-                | "adapter_failed"
-                | "resources_unresolved"
-                | "probe_interrupted",
-            )
-            | ("unsupported", "agent_cli_unavailable") => self.http_status.is_none(),
-            _ => false,
+            _ => self.message.is_none(),
         };
+        let valid = message_ok
+            && match (self.state.as_str(), self.code.as_str()) {
+                ("passed", "response_received") => self.http_status.is_none(),
+                ("failed", "provider_rejected") => {
+                    self.http_status.is_some_and(|s| (400..=599).contains(&s))
+                }
+                (
+                    "failed",
+                    "connection_failed"
+                    | "credential_missing"
+                    | "credential_unavailable"
+                    | "credential_unreadable"
+                    | "adapter_unavailable"
+                    | "cli_environment_unavailable"
+                    | "cli_login_required"
+                    | "cli_environment_changed"
+                    | "cli_tool_unverified"
+                    | "cli_native_failed",
+                )
+                | ("passed", "cli_tool_roundtrip")
+                | (
+                    "inconclusive",
+                    "invalid_response"
+                    | "deadline"
+                    | "cancelled"
+                    | "adapter_failed"
+                    | "resources_unresolved"
+                    | "probe_interrupted",
+                )
+                | ("unsupported", "agent_cli_unavailable") => self.http_status.is_none(),
+                _ => false,
+            };
         if valid {
             Ok(())
         } else {
@@ -204,6 +225,7 @@ impl Store {
             state: "pending".into(),
             code: "outcome_pending".into(),
             http_status: None,
+            message: None,
             started_at_ms: now(),
             finished_at_ms: None,
             cli: cli::binding(&tx, &selected, worker.as_deref())?,
@@ -243,6 +265,7 @@ impl Store {
         record.state = outcome.state;
         record.code = outcome.code;
         record.http_status = outcome.http_status;
+        record.message = outcome.message;
         record.finished_at_ms = Some(now());
         save(&tx, "connection_tests", id, &record)?;
         let updated = tx.execute(
@@ -345,6 +368,14 @@ pub async fn test(store: &mut Store, request_id: &str, command: &Command) -> Res
     )?)
 }
 
+fn outcome_for_credential(error: &Error) -> Outcome {
+    if crate::credential::is_current_binary_unreadable(error) {
+        Outcome::current_binary_unreadable()
+    } else {
+        Outcome::new("failed", "credential_unavailable")
+    }
+}
+
 async fn observe(preparation: Preparation) -> Outcome {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(29);
     let ConnectionSpec::Api {
@@ -366,6 +397,7 @@ async fn observe(preparation: Preparation) -> Outcome {
     {
         Ok(Ok(Ok(secret))) => secret,
         Err(_) => return Outcome::new("inconclusive", "deadline"),
+        Ok(Ok(Err(error))) => return outcome_for_credential(&error),
         _ => return Outcome::new("failed", "credential_unavailable"),
     };
     let mut payload = json!({"protocol":protocol,"model":model,"apiKey":secret});
@@ -464,6 +496,27 @@ mod tests {
                 .unwrap();
             assert_eq!(n, u64::from(table == "workers"));
         }
+    }
+    #[test]
+    fn unreadable_keychain_uses_a_fixed_message_and_rejects_other_text() {
+        let outcome = outcome_for_credential(&Error::Unavailable(
+            crate::credential::CURRENT_BINARY_UNREADABLE.into(),
+        ));
+        assert_eq!(outcome.code, "credential_unreadable");
+        assert_eq!(
+            outcome.message.as_deref(),
+            Some(crate::credential::CURRENT_BINARY_UNREADABLE)
+        );
+        outcome.validate().unwrap();
+        let generic = outcome_for_credential(&Error::Unavailable(
+            "Keychain 不可用或访问被拒绝；未回退到明文凭据".into(),
+        ));
+        assert_eq!(generic.code, "credential_unavailable");
+        assert!(generic.message.is_none());
+        generic.validate().unwrap();
+        let mut forged = Outcome::current_binary_unreadable();
+        forged.message = Some("synthetic-secret".into());
+        assert!(forged.validate().is_err());
     }
     #[tokio::test(flavor = "current_thread")]
     async fn missing_credential_is_persisted_and_replay_never_starts_another_probe() {

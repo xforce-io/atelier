@@ -1667,3 +1667,182 @@ fn skill_describe_distinguishes_initialization_corruption_and_protocol_conflicts
             .any(|b| b == b"workspace_missing")
     );
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+#[ignore = "re-signs two CLI copies and writes one synthetic Keychain item"]
+fn rebuilt_binary_cannot_read_an_existing_keychain_item() {
+    let source = std::path::PathBuf::from(env!("CARGO_BIN_EXE_atelier"));
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("atelier-a");
+    let second = dir.path().join("atelier-b");
+    std::fs::copy(&source, &first).unwrap();
+    std::fs::copy(&source, &second).unwrap();
+    sign(&first, "io.xforce.atelier.issue6.a");
+    sign(&second, "io.xforce.atelier.issue6.b");
+    let workspace = dir.path().join("workspace");
+    let config = dir.path().join("connection.json");
+    std::fs::write(
+        &config,
+        r#"{"transport":"api","protocol":"openai-chat-completions","model":"fixture","base_url":"https://example.invalid/v1"}"#,
+    )
+    .unwrap();
+    let secret = "synthetic-issue6-secret";
+    let created = run(
+        &first,
+        &workspace,
+        &[
+            "--request-id",
+            "init",
+            "workspace",
+            "init",
+            "--name",
+            "本人",
+        ],
+        None,
+    );
+    assert_eq!(created["ok"], true, "{created}");
+    let connection = run(
+        &first,
+        &workspace,
+        &[
+            "--request-id",
+            "connection",
+            "connection",
+            "create",
+            "--name",
+            "API",
+            "--file",
+            config.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert_eq!(connection["ok"], true, "{connection}");
+    let id = connection["data"]["connection"]["id"].as_str().unwrap();
+    let stored = run(
+        &first,
+        &workspace,
+        &[
+            "--request-id",
+            "set-secret",
+            "connection",
+            "credential",
+            "set",
+            id,
+            "--revision",
+            "1",
+            "--stdin",
+        ],
+        Some(secret),
+    );
+    assert_eq!(stored["ok"], true, "{stored}");
+    assert!(!stored.to_string().contains(secret));
+    let foreign = run(
+        &second,
+        &workspace,
+        &[
+            "--request-id",
+            "test-foreign",
+            "connection",
+            "test",
+            id,
+            "--revision",
+            "1",
+        ],
+        None,
+    );
+    assert_eq!(foreign["ok"], true, "{foreign}");
+    assert_eq!(
+        foreign["data"]["code"], "credential_unreadable",
+        "{foreign}"
+    );
+    assert_eq!(
+        foreign["data"]["message"],
+        "当前二进制无法读取已有 Keychain 项，请用当前二进制重新设置凭据"
+    );
+    assert!(!foreign.to_string().contains(secret));
+    let owner = run(
+        &first,
+        &workspace,
+        &[
+            "--request-id",
+            "test-owner",
+            "connection",
+            "test",
+            id,
+            "--revision",
+            "1",
+        ],
+        None,
+    );
+    assert_ne!(owner["data"]["code"], "credential_unreadable", "{owner}");
+    assert!(!owner.to_string().contains(secret));
+    let cleared = run(
+        &first,
+        &workspace,
+        &[
+            "--request-id",
+            "clear-secret",
+            "connection",
+            "credential",
+            "clear",
+            id,
+            "--revision",
+            "1",
+        ],
+        None,
+    );
+    assert_eq!(cleared["ok"], true, "{cleared}");
+    assert!(!cleared.to_string().contains(secret));
+}
+
+#[cfg(target_os = "macos")]
+fn sign(path: &Path, identifier: &str) {
+    let output = std::process::Command::new("codesign")
+        .args(["--force", "--sign", "-", "--identifier", identifier])
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[cfg(target_os = "macos")]
+fn run(binary: &Path, workspace: &Path, args: &[&str], stdin: Option<&str>) -> Value {
+    let mut command = std::process::Command::new(binary);
+    command
+        .arg("--workspace")
+        .arg(workspace)
+        .arg("--json")
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = command.spawn().unwrap();
+    if let Some(secret) = stdin {
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(secret.as_bytes())
+            .unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|_| {
+        panic!(
+            "stdout {}\nstderr {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    });
+    assert!(
+        output.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    value
+}
