@@ -440,9 +440,7 @@ fn artifact_basis(
 
 fn files_differ(left: &[crate::content::FileEntry], right: &[crate::content::FileEntry]) -> bool {
     use std::collections::BTreeMap;
-    fn index(
-        files: &[crate::content::FileEntry],
-    ) -> Option<BTreeMap<&str, (&str, u64, bool)>> {
+    fn index(files: &[crate::content::FileEntry]) -> Option<BTreeMap<&str, (&str, u64, bool)>> {
         let mut map = BTreeMap::new();
         for file in files {
             if map
