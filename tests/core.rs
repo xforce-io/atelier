@@ -1792,7 +1792,15 @@ fn completed_run_without_handling_reports_business_blocker_and_preserves_native_
     assert!(delivery["handlingResult"].is_null());
     let business_reason = format!("未记录有效的消息处理结果；{native_reason}");
     assert_eq!(delivery["reason"], business_reason);
-    assert_eq!(recovery_for(&f, &run.task_id).question, business_reason);
+    assert!(
+        f.store
+            .decisions(&run.task_id)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|d| d["kind"] != "recovery")
+    );
     assert_eq!(f.store.task(&run.task_id).unwrap().state, "pending");
 }
 
@@ -1919,8 +1927,9 @@ fn exhausted_run_budget_preserves_human_failure_without_new_leader_delivery() {
         .unwrap();
     assert_eq!(
         f.store.mailbox(None).unwrap()[0]["message"]["kind"],
-        "decision.request"
+        "failure"
     );
+    assert!(recovery_decisions(&f, id).is_empty());
     assert!(
         !f.store
             .mailbox(Some(&f.team.leader))
@@ -3013,7 +3022,16 @@ fn note_reply_loop_exhausts_persistent_budgets_without_losing_human_recovery() {
     assert_eq!((before.runs_used, before.messages_used), (4, 5));
     let human_mailbox = f.store.mailbox(Some(&f.human)).unwrap();
     assert_eq!(human_mailbox.as_array().unwrap().len(), 1);
-    assert_eq!(human_mailbox[0]["message"]["kind"], "decision.request");
+    assert_eq!(human_mailbox[0]["message"]["kind"], "failure");
+    assert!(
+        f.store
+            .decisions(&run.task_id)
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|d| d["kind"] != "recovery")
+    );
     let leader_mailbox = f.store.mailbox(Some(&run.worker_id)).unwrap();
     assert!(
         !leader_mailbox
@@ -7656,23 +7674,26 @@ fn rework_reservation_is_atomic_persistent_and_consumed_once_with_bounded_retrie
         .runtime_run_observed_stopped("restarted", &third.id, "fixture stopped")
         .unwrap();
     f.store.runtime_register("again", 123).unwrap();
-    let denied = f.store.execute(
-        "over-budget",
-        &Command::TaskRework {
-            id: first.task_id.clone(),
-            revision: first.task_revision,
-            reason: atelier::rework::ReworkReason::RunFailure { id: third.id },
-            instruction: "额度不得重置".into(),
-        },
-    );
-    assert!(matches!(denied, Err(Error::Conflict(_))));
+    let continued = f
+        .store
+        .execute(
+            "over-budget",
+            &Command::TaskRework {
+                id: first.task_id.clone(),
+                revision: first.task_revision,
+                reason: atelier::rework::ReworkReason::RunFailure { id: third.id },
+                instruction: "旧默认 2 次不再拒绝，重启也不清零".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(continued["action"], "rework");
     assert_eq!(f.store.task(&first.task_id).unwrap().reworks_used, 2);
     assert_eq!(
         f.store.task_details(&first.task_id).unwrap()["rework_arrangements"]
             .as_array()
             .unwrap()
             .len(),
-        2
+        3
     );
 }
 
@@ -10628,18 +10649,11 @@ fn choose_recovery_retry(f: &mut Fixture, task_id: &str) {
 fn recovery_query_separates_stop_facts_from_fix_configuration() {
     let cases = [
         (
-            "API 执行结束：completed（model_stop）；资源已回收",
-            "model_stop_without_message_respond",
-            "这不是修复配置",
-        ),
-        (
             "API 执行结束：failed（MODEL_CONNECTION_ERROR）；资源已回收",
             "connection_failure",
             "这不是修复配置",
         ),
-        ("测试注入：额度已耗尽", "quota", "不重置额度"),
         ("成员权限已撤销", "permission", "恢复原授权"),
-        ("测试注入：资源已停止", "observed", "停止事实："),
         ("成员未登录，执行配置缺失", "observed", "修复原配置范围内"),
     ];
     for (index, (reason, fact, marker)) in cases.iter().enumerate() {
@@ -10721,7 +10735,7 @@ fn recovery_query_separates_stop_facts_from_fix_configuration() {
         .runtime_run_observed_stopped(
             "service",
             &run.id,
-            "API 执行结束：completed（model_stop）；资源已回收",
+            "API 执行结束：failed（MODEL_CONNECTION_ERROR）；资源已回收",
         )
         .unwrap();
     let decision = recovery_for(&f, &run.task_id);
@@ -10803,7 +10817,7 @@ fn recovery_query_shows_partial_current_artifact_without_accepting_task() {
         .runtime_run_observed_stopped(
             "service",
             &leader_run.id,
-            "API 执行结束：completed（model_stop）；资源已回收",
+            "API 执行结束：failed（MODEL_CONNECTION_ERROR）；资源已回收",
         )
         .unwrap();
     let decision = recovery_for(&f, &leader_run.task_id);
@@ -10866,7 +10880,7 @@ fn recovery_query_shows_partial_current_artifact_without_accepting_task() {
         &["task", "decision", "show", &decision.id],
     );
     let situation = &shown["data"]["situation"];
-    assert_eq!(situation["stop_fact"], "model_stop_without_message_respond");
+    assert_eq!(situation["stop_fact"], "connection_failure");
     assert_eq!(situation["artifact_id"], artifact.id);
     assert_eq!(situation["artifact_partial"], true);
     assert_eq!(situation["differs_from_baseline"], true);
@@ -11045,7 +11059,11 @@ fn recovery_response_and_retry_roll_back_with_their_receipts_and_request_ledger(
     let mut f = Fixture::new(true);
     let (run, _) = f.running_member_with_contract(Some(generic_contract()));
     f.store
-        .runtime_run_observed_stopped("service", &run.id, "fixture stopped unfinished")
+        .runtime_run_observed_stopped(
+            "service",
+            &run.id,
+            "API 执行结束：failed（MODEL_CONNECTION_ERROR）；资源已回收",
+        )
         .unwrap();
     let d = recovery_for(&f, &run.task_id);
     let sql = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3")).unwrap();
@@ -12990,4 +13008,212 @@ fn human_deploy_success_handles_the_unclaimed_assignment() {
     assert_eq!(finished["id"], delivery["id"]);
     assert_eq!(finished["status"], "handled");
     assert_eq!(finished["reason"], "human deploy succeeded");
+}
+
+#[test]
+fn ordinary_member_stop_reaches_leader_without_recovery_and_empty_leader_stop_does_not_requeue() {
+    let mut f = Fixture::new(true);
+    let executor_config = f.prepare_executor();
+    let (leader_run, binding) = f.running_member_with_contract(Some(generic_contract()));
+    assert_eq!(
+        f.store
+            .member_call(
+                &binding,
+                &member_operation(
+                    &leader_run,
+                    "accept",
+                    "task_intake",
+                    json!({"revision":2,"decision":"accept","reason":"约束和职责齐备"})
+                ),
+            )
+            .unwrap()["ok"],
+        true
+    );
+    let arranged = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(
+                &leader_run,
+                "arrange",
+                "task_arrange",
+                json!({"revision":3,"action":"execute","instruction":"写出当前页面"}),
+            ),
+        )
+        .unwrap();
+    assert_eq!(arranged["ok"], true, "{arranged}");
+    assert_eq!(
+        f.store
+            .member_call(
+                &binding,
+                &member_operation(
+                    &leader_run,
+                    "finish",
+                    "message_respond",
+                    json!({"kind":"assignment","messageId":arranged["data"]["delivery"]["messageId"]})
+                ),
+            )
+            .unwrap()["ok"],
+        true
+    );
+    f.store
+        .runtime_run_observed_stopped("service", &leader_run.id, "负责人已安排执行")
+        .unwrap();
+    let delivery = arranged["data"]["delivery"]["deliveryId"].as_str().unwrap();
+    let executor_run = f
+        .store
+        .runtime_claim("service", delivery, &executor_config)
+        .unwrap();
+    f.store
+        .runtime_begin_launch("service", &executor_run.id)
+        .unwrap();
+    let executor_run = f
+        .store
+        .runtime_child_started("service", &executor_run.id, 654, "fixture-execution")
+        .unwrap();
+    f.store
+        .runtime_run_observed_stopped("service", &executor_run.id, "测试注入：额度已耗尽")
+        .unwrap();
+    let task_id = executor_run.task_id.clone();
+    let decisions = acceptance_cli(
+        &f,
+        "list-decisions",
+        &["task", "decision", "list", "--task", &task_id],
+    );
+    assert!(
+        decisions["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["kind"] != "recovery")
+    );
+    let leader_mail = acceptance_cli(
+        &f,
+        "list-leader-mail",
+        &["mailbox", "list", "--worker", &f.team.leader],
+    );
+    let queued: Vec<_> = leader_mail["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["status"] == "queued" && item["message"]["kind"] == "failure")
+        .collect();
+    assert_eq!(queued.len(), 1);
+    let before = f.store.task(&task_id).unwrap().runs_used;
+    let (follow, _) = f.claim_member_message(
+        queued[0]["id"].as_str().unwrap(),
+        &leader_run.configuration_id,
+    );
+    assert_eq!(f.store.task(&task_id).unwrap().runs_used, before + 1);
+    let used = f.store.task(&task_id).unwrap().runs_used;
+    f.store
+        .runtime_run_observed_stopped(
+            "service",
+            &follow.id,
+            "API 执行结束：completed（model_stop）；资源已回收",
+        )
+        .unwrap();
+    assert_eq!(f.store.task(&task_id).unwrap().runs_used, used);
+    assert!(recovery_decisions(&f, &task_id).is_empty());
+    let after = f.store.mailbox(Some(&f.team.leader)).unwrap();
+    assert!(
+        !after
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["status"] == "queued")
+    );
+    let receipt = fixture_delivery(&f, &executor_run.worker_id, &executor_run.delivery_id);
+    let status = receipt["status"].clone();
+    let retry = std::process::Command::new(env!("CARGO_BIN_EXE_atelier"))
+        .arg("--workspace")
+        .arg(f.dir.path())
+        .args([
+            "--json",
+            "--request-id",
+            "retry-accepted-execute",
+            "mailbox",
+            "retry",
+            &executor_run.delivery_id,
+            "--revision",
+            &receipt["revision"].as_u64().unwrap().to_string(),
+            "--reason",
+            "原样重试已受理的执行",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        !retry.status.success(),
+        "{}",
+        String::from_utf8_lossy(&retry.stdout)
+    );
+    assert_eq!(
+        fixture_delivery(&f, &executor_run.worker_id, &executor_run.delivery_id)["status"],
+        status
+    );
+}
+
+#[test]
+fn third_rework_ignores_retired_default_and_explicit_one_still_rejects() {
+    let mut f = Fixture::new(false);
+    let (first, _, _) = f.running_executor();
+    let _artifact = f.fix_run(&first);
+    if f.store.run(&first.id).unwrap().state != "stopped" {
+        f.store
+            .runtime_run_observed_stopped("service", &first.id, "fixture execution stopped")
+            .unwrap();
+    }
+    let task = f.store.task(&first.task_id).unwrap();
+    let sql = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3")).unwrap();
+    sql.execute(
+        "UPDATE tasks SET data=json_set(data,'$.reworks_used',2) WHERE id=?1",
+        [&first.task_id],
+    )
+    .unwrap();
+    let arranged = acceptance_cli(
+        &f,
+        "third-rework",
+        &[
+            "task",
+            "rework",
+            &first.task_id,
+            "--revision",
+            &task.revision.to_string(),
+            "--failed-run",
+            &first.id,
+            "--instruction",
+            "第三次仍有新的失败依据",
+        ],
+    );
+    assert_eq!(arranged["data"]["action"], "rework");
+    sql.execute(
+        "UPDATE tasks SET data=json_set(data,'$.contract.max_reworks',1,'$.reworks_used',1) WHERE id=?1",
+        [&first.task_id],
+    )
+    .unwrap();
+    let error = f
+        .store
+        .execute(
+            "capped-rework",
+            &Command::TaskRework {
+                id: first.task_id.clone(),
+                revision: task.revision,
+                reason: atelier::rework::ReworkReason::RunFailure { id: first.id },
+                instruction: "显式上限应拒绝".into(),
+            },
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("额度"), "{error}");
+}
+
+fn recovery_decisions(f: &Fixture, task: &str) -> Vec<serde_json::Value> {
+    f.store
+        .decisions(task)
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["kind"] == "recovery")
+        .cloned()
+        .collect()
 }

@@ -38,6 +38,19 @@ fn current(d: &DecisionRequest, t: &Task) -> Result<()> {
     }
     Ok(())
 }
+/// Credential, revoked authority, connection failure, and unreconciled resources
+/// still belong to the human. Ordinary reconciled stops do not.
+pub(crate) fn needs_human_recovery(reason: &str) -> bool {
+    reason.contains("权限已撤销")
+        || reason.contains("MODEL_CONNECTION_ERROR")
+        || reason.contains("凭据")
+        || reason.contains("未登录")
+        || reason.contains("执行配置缺失")
+        || reason.contains("未配置")
+        || reason.contains("尚未核对")
+        || reason.contains("待核对")
+}
+
 pub(crate) fn ensure(
     db: &Connection,
     task: &mut Task,
@@ -167,7 +180,22 @@ pub(crate) fn respond(
     Ok(json!({"decision":d,"delivery":result}))
 }
 pub(crate) fn require_retry_choice(db: &Connection, delivery: &str) -> Result<()> {
-    let blocks:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM decisions WHERE json_extract(data,'$.kind')='recovery' AND json_extract(data,'$.recovery.delivery_id')=?1 AND json_extract(data,'$.state') IN ('open','responded') AND coalesce(json_extract(data,'$.answer'),'')!='retry')",[delivery],|r|r.get(0))?;
+    let status: String = db.query_row(
+        "SELECT status FROM deliveries WHERE id=?1",
+        [delivery],
+        |r| r.get(0),
+    )?;
+    let mut stmt = db.prepare("SELECT json_extract(data,'$.question') FROM decisions WHERE json_extract(data,'$.kind')='recovery' AND json_extract(data,'$.recovery.delivery_id')=?1 AND json_extract(data,'$.state') IN ('open','responded') AND coalesce(json_extract(data,'$.answer'),'')!='retry'")?;
+    let questions = stmt
+        .query_map([delivery], |r| r.get::<_, String>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let blocks = if status == "uncertain" {
+        !questions.is_empty()
+    } else {
+        questions
+            .iter()
+            .any(|question| needs_human_recovery(question))
+    };
     if blocks {
         return Err(Error::Conflict(
             "此投递有本人恢复待办；须先正式选择 retry，等待或取消选择不能重新排队".into(),
