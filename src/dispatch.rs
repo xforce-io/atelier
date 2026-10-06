@@ -108,15 +108,16 @@ impl Store {
                 reason
             ],
         )?;
-        if !expired
-            && !crate::recovery::ensure(
+        let opened = !expired
+            && crate::recovery::needs_human_recovery(reason)
+            && crate::recovery::ensure(
                 &tx,
                 &mut task,
                 &work.delivery_id,
                 &format!("preflight:{}:{}", work.delivery_id, work.revision),
                 reason,
-            )?
-        {
+            )?;
+        if !expired && !opened {
             let mut recipients = vec![task.team_snapshot.acceptor.clone()];
             // The failed leader already has its blocked delivery. A failure of
             // handling a failure must not recursively generate more model work.

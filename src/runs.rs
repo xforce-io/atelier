@@ -124,13 +124,20 @@ fn notify_failure(db: &Connection, run: &Run, task: &mut Task, reason: &str) -> 
     if task.state == "closed" || task.cancellation_requested {
         return Ok(());
     }
-    if crate::recovery::ensure(
-        db,
-        task,
-        &run.delivery_id,
-        &format!("run:{}", run.id),
-        reason,
-    )? {
+    let delivery_status: String = db.query_row(
+        "SELECT status FROM deliveries WHERE id=?1",
+        [&run.delivery_id],
+        |r| r.get(0),
+    )?;
+    if (delivery_status == "uncertain" || crate::recovery::needs_human_recovery(reason))
+        && crate::recovery::ensure(
+            db,
+            task,
+            &run.delivery_id,
+            &format!("run:{}", run.id),
+            reason,
+        )?
+    {
         return Ok(());
     }
     let stopping: bool = db.query_row(
@@ -192,8 +199,107 @@ pub(crate) fn recover_on_start(db: &Connection, new_epoch: &str) -> Result<()> {
             notify_failure(db, &run, &mut task, "旧服务退出，资源状态尚未核对")?;
         }
     }
+    hand_ordinary_stops(db)?;
     Ok(())
 }
+
+/// One catch-up when an ordinary recovery is still open and the leader has no
+/// queued work. The same delivery is not handed again.
+fn hand_ordinary_stops(db: &Connection) -> Result<()> {
+    let stopping: Option<bool> = db
+        .query_row(
+            "SELECT stop_requested FROM runtime WHERE singleton=1",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if stopping.unwrap_or(false) {
+        return Ok(());
+    }
+    let mut tasks =
+        db.prepare("SELECT id FROM tasks WHERE json_extract(data,'$.state')='active'")?;
+    let ids = tasks
+        .query_map([], |r| r.get::<_, String>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    drop(tasks);
+    for id in ids {
+        let mut task: Task = load(db, "tasks", &id)?;
+        if task.cancellation_requested || task.runs_used >= task.contract.max_runs {
+            continue;
+        }
+        if !open_ordinary_recovery(db, &id)? {
+            continue;
+        }
+        let leader = task.team_snapshot.leader.clone();
+        let pending: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM messages m JOIN deliveries d ON d.message_id=m.id WHERE m.task_id=?1 AND d.receiver=?2 AND d.status IN ('queued','claimed'))",
+            params![id, leader],
+            |r| r.get(0),
+        )?;
+        if pending {
+            continue;
+        }
+        let latest: Option<(String, String, String, String)> = db
+            .query_row(
+                "SELECT d.id,d.status,COALESCE(d.reason,''),r.id FROM runs r JOIN deliveries d ON d.id=r.delivery_id WHERE r.task_id=?1 AND r.state='stopped' AND json_extract(r.data,'$.purpose') IN ('execute','rework') ORDER BY r.rowid DESC LIMIT 1",
+                [&id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .optional()?;
+        let Some((delivery, status, reason, run_id)) = latest else {
+            continue;
+        };
+        if status != "blocked" || crate::recovery::needs_human_recovery(&reason) {
+            continue;
+        }
+        let event = format!("ordinary-continue:{delivery}");
+        let exists: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM messages WHERE event_key=?1)",
+            [&event],
+            |r| r.get(0),
+        )?;
+        if exists {
+            continue;
+        }
+        let body =
+            serde_json::json!({"runId":run_id,"deliveryId":delivery,"reason":reason}).to_string();
+        enqueue_system(
+            db,
+            &mut task,
+            &run_id,
+            Message {
+                recipient: &leader,
+                kind: "failure",
+                body: &body,
+                reply_to: None,
+                event: Some(&event),
+                mandatory: true,
+            },
+        )?;
+    }
+    Ok(())
+}
+
+fn open_ordinary_recovery(db: &Connection, task: &str) -> Result<bool> {
+    let mut stmt = db.prepare("SELECT json_extract(data,'$.question'), json_extract(data,'$.recovery.delivery_id') FROM decisions WHERE task_id=?1 AND json_extract(data,'$.kind')='recovery' AND json_extract(data,'$.state') IN ('open','responded')")?;
+    let rows = stmt
+        .query_map([task], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for (question, delivery) in rows {
+        let status: String = db.query_row(
+            "SELECT status FROM deliveries WHERE id=?1",
+            [&delivery],
+            |r| r.get(0),
+        )?;
+        if status != "uncertain" && !crate::recovery::needs_human_recovery(&question) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 pub(crate) fn request_all_stop(db: &Connection, reason: &str) -> Result<()> {
     for mut run in active(db)? {
         run.stop_requested = true;

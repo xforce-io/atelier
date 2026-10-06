@@ -29,6 +29,11 @@ pub(crate) struct Rework {
     pub prior_current_artifact: Option<String>,
     pub reason: ReworkReason,
 }
+/// The stored default of 2 is the retired product ceiling, not an explicit tighten.
+pub(crate) fn rework_count_blocks(used: u32, cap: u32) -> bool {
+    cap != 2 && used >= cap
+}
+
 /// Unclaimed blocked work still reserves its slot; cancellation releases it.
 pub(crate) fn reserved(db: &Connection, task: &str) -> Result<u32> {
     Ok(db.query_row("SELECT count(*) FROM reworks r JOIN deliveries d ON d.id=r.id WHERE r.task_id=?1 AND d.run_id IS NULL AND d.status IN ('queued','blocked')", [task], |r| r.get(0))?)
@@ -196,7 +201,10 @@ pub(crate) fn arrange(
     }
     text(instruction, "返工说明", 65536)?;
     if task.runs_used >= task.contract.max_runs
-        || task.reworks_used + reserved(db, id)? >= task.contract.max_reworks
+        || rework_count_blocks(
+            task.reworks_used + reserved(db, id)?,
+            task.contract.max_reworks,
+        )
     {
         return Err(Error::Conflict(
             "任务运行或返工额度耗尽（含已预留），不能安排新返工".into(),
@@ -279,7 +287,7 @@ pub(crate) fn claimable(db: &Connection, task: &Task, delivery: &str) -> Result<
     if r.task_id != task.id
         || r.task_revision != task.revision
         || r.prior_current_artifact != task.current_artifact
-        || task.reworks_used >= task.contract.max_reworks
+        || rework_count_blocks(task.reworks_used, task.contract.max_reworks)
     {
         return Err(Error::Conflict("返工依据已变化或额度耗尽".into()));
     }
