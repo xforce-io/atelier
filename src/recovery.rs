@@ -4,7 +4,7 @@ use crate::{
     model::*,
     store::{Message, enqueue_system, load, new_id, require, revision},
 };
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,7 +72,7 @@ pub(crate) fn ensure(
 
     let id = new_id();
     let human = task.team_snapshot.acceptor.clone();
-    let body=json!({"decisionId":id,"kind":"recovery","deliveryId":delivery,"runId":run_id,"reason":reason,"options":["retry","wait","cancel"],"next":"先正式回应；retry 不授予权限或解除未知，修复后显式落实；wait 保留待办，cancel 另提交取消"}).to_string();
+    let body=json!({"decisionId":id,"kind":"recovery","deliveryId":delivery,"runId":run_id,"reason":reason,"options":["retry","wait","cancel"],"next":"用 task decision show 查看停止事实、当前产出和 retry/wait/cancel 各自的改变。正式回应是 task decision respond；回应尚未落实"}).to_string();
     let receipt = enqueue_system(
         db,
         task,
@@ -100,7 +100,10 @@ pub(crate) fn ensure(
         handler: human,
         kind: "recovery".into(),
         question: reason.into(),
-        impact: "本人修复原配置/授权和核对资源；业务承接与安排仍由原团队负责人决定".into(),
+        impact: recovery_facts(db, &task.id, delivery)?["impact"]
+            .as_str()
+            .ok_or_else(|| Error::Conflict("恢复说明缺失".into()))?
+            .into(),
         options: vec!["retry".into(), "wait".into(), "cancel".into()],
         revision: 1,
         state: "open".into(),
@@ -237,7 +240,7 @@ pub(crate) fn apply(
                 cause,
                 delivery,
                 rev,
-                "本人恢复决定：原配置条件已修复，请重新检查",
+                "本人选择 retry，同一条消息重新排队。不表示配置已修复，也不表示工作已经继续",
             )
         }
         Some("cancel") => crate::store::apply(
@@ -305,4 +308,271 @@ pub(crate) fn revoked(
         }
     }
     Ok(())
+}
+
+pub(crate) fn project(db: &Connection, mut value: Value) -> Result<Value> {
+    if value.get("kind").and_then(|item| item.as_str()) != Some("recovery") {
+        return Ok(value);
+    }
+    let delivery_id = value
+        .pointer("/recovery/delivery_id")
+        .and_then(|item| item.as_str())
+        .ok_or_else(|| Error::Conflict("恢复事项缺少投递依据".into()))?
+        .to_string();
+    let task_id = value
+        .get("task_id")
+        .and_then(|item| item.as_str())
+        .ok_or_else(|| Error::Conflict("恢复事项缺少任务".into()))?
+        .to_string();
+    let mut situation = recovery_facts(db, &task_id, &delivery_id)?;
+    situation["response"] = json!(response_code(&value)?);
+    value["impact"] = situation["impact"].clone();
+    value["situation"] = situation;
+    Ok(value)
+}
+
+fn response_code(value: &Value) -> Result<String> {
+    let state = value
+        .get("state")
+        .and_then(|item| item.as_str())
+        .ok_or_else(|| Error::Conflict("恢复事项缺少状态".into()))?;
+    Ok(match state {
+        "open" => "not_responded".to_string(),
+        "responded"
+            if value
+                .get("blocked_reason")
+                .and_then(|item| item.as_str())
+                .is_some() =>
+        {
+            "apply_blocked".to_string()
+        }
+        "responded" => "responded_not_applied".to_string(),
+        "resolved" => "applied".to_string(),
+        other => other.to_string(),
+    })
+}
+
+fn recovery_facts(db: &Connection, task_id: &str, delivery_id: &str) -> Result<Value> {
+    let (receiver, status, reason, run_id, message_id): (
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        String,
+    ) = db
+        .query_row(
+            "SELECT receiver,status,reason,run_id,message_id FROM deliveries WHERE id=?1",
+            [delivery_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .map_err(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => Error::Conflict("恢复投递不存在".into()),
+            other => Error::Database(other),
+        })?;
+    let detail = reason.ok_or_else(|| Error::Conflict("恢复投递缺少停止事实".into()))?;
+    let message_exists: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM messages WHERE id=?1)",
+        [&message_id],
+        |row| row.get(0),
+    )?;
+    if !message_exists {
+        return Err(Error::Conflict("恢复消息不存在".into()));
+    }
+    let mut texts = vec![detail.clone()];
+    if let Some(run_id) = &run_id {
+        let run: Run = load(db, "runs", run_id)?;
+        if run.worker_id != receiver {
+            return Err(Error::Conflict("恢复投递的成员与 Run 成员不一致".into()));
+        }
+        if let Some(stop_reason) = run.stop_reason {
+            texts.push(stop_reason);
+        }
+        terminal_texts(db, run_id, &mut texts)?;
+    }
+    let has_disposition: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM message_dispositions WHERE delivery_id=?1)",
+        [delivery_id],
+        |row| row.get(0),
+    )?;
+    let fact = classify(&texts, has_disposition);
+    let task: Task = load(db, "tasks", task_id)?;
+    let (artifact_id, artifact_partial, differs_from_baseline) = artifact_basis(db, &task)?;
+    Ok(json!({
+        "member_id": receiver,
+        "message_id": message_id,
+        "run_id": run_id,
+        "delivery_id": delivery_id,
+        "delivery_status": status,
+        "stop_fact": fact,
+        "stop_detail": detail,
+        "impact": impact_for(fact, &detail),
+        "artifact_id": artifact_id,
+        "artifact_partial": artifact_partial,
+        "differs_from_baseline": differs_from_baseline,
+        "choices": choices(),
+    }))
+}
+
+fn artifact_basis(
+    db: &Connection,
+    task: &Task,
+) -> Result<(Option<String>, Option<bool>, Option<bool>)> {
+    let Some(artifact_id) = task.current_artifact.clone() else {
+        return Ok((None, None, None));
+    };
+    let artifact: crate::artifact::Artifact = load(db, "artifacts", &artifact_id)?;
+    let differs = if let Some(input_id) = &task.contract.code_input {
+        let input: crate::content::GitInput = load(db, "inputs", input_id)?;
+        Some(files_differ(&artifact.files, &input.files))
+    } else {
+        None
+    };
+    Ok((Some(artifact_id), Some(artifact.partial), differs))
+}
+
+fn files_differ(left: &[crate::content::FileEntry], right: &[crate::content::FileEntry]) -> bool {
+    use std::collections::BTreeMap;
+    fn index(files: &[crate::content::FileEntry]) -> Option<BTreeMap<&str, (&str, u64, bool)>> {
+        let mut map = BTreeMap::new();
+        for file in files {
+            if map
+                .insert(
+                    file.path.as_str(),
+                    (file.sha256.as_str(), file.size, file.executable),
+                )
+                .is_some()
+            {
+                return None;
+            }
+        }
+        Some(map)
+    }
+    match (index(left), index(right)) {
+        (Some(left), Some(right)) => left != right,
+        _ => true,
+    }
+}
+
+fn terminal_texts(db: &Connection, run_id: &str, texts: &mut Vec<String>) -> Result<()> {
+    for sql in [
+        "SELECT json_extract(data,'$.terminal') FROM api_launches WHERE run_id=?1",
+        "SELECT json_extract(data,'$.terminal') FROM cli_resources WHERE run_id=?1",
+    ] {
+        let raw: Option<Option<String>> = db
+            .query_row(sql, [run_id], |row| row.get::<_, Option<String>>(0))
+            .optional()?;
+        if let Some(Some(raw)) = raw {
+            push_terminal(&raw, texts)?;
+        }
+    }
+    Ok(())
+}
+
+fn push_terminal(raw: &str, texts: &mut Vec<String>) -> Result<()> {
+    if raw == "null" {
+        return Ok(());
+    }
+    let parsed: Value =
+        serde_json::from_str(raw).map_err(|_| Error::Conflict("恢复停止终态无法读取".into()))?;
+    if parsed.is_null() {
+        return Ok(());
+    }
+    let object = parsed
+        .as_object()
+        .ok_or_else(|| Error::Conflict("恢复停止终态无法读取".into()))?;
+    for key in [
+        "stopReason",
+        "stop_reason",
+        "stopCode",
+        "stop_code",
+        "nativeStopReason",
+        "native_stop_reason",
+    ] {
+        if let Some(text) = object.get(key).and_then(|item| item.as_str()) {
+            texts.push(text.to_string());
+        }
+    }
+    Ok(())
+}
+
+fn classify(texts: &[String], has_disposition: bool) -> &'static str {
+    let joined = texts.join("\n");
+    if joined.contains("权限已撤销") {
+        return "permission";
+    }
+    if joined.contains("budget_exhausted")
+        || joined.contains("额度耗尽")
+        || joined.contains("额度已耗尽")
+    {
+        return "quota";
+    }
+    if joined.contains("MODEL_CONNECTION_ERROR") {
+        return "connection_failure";
+    }
+    if !has_disposition && joined.contains("model_stop") {
+        return "model_stop_without_message_respond";
+    }
+    "observed"
+}
+
+fn impact_for(fact: &str, detail: &str) -> String {
+    let mut label = match fact {
+        "model_stop_without_message_respond" => {
+            "模型结束本轮，但没有 message_respond。这不是修复配置。".to_string()
+        }
+        "connection_failure" => "连接失败：提供方请求没有连上。这不是修复配置。".to_string(),
+        "permission" => "权限不足或已撤销。可以恢复原授权，或等待、取消。".to_string(),
+        "quota" => "额度不足。retry 不重置额度。".to_string(),
+        _ => {
+            let mut text = format!("停止事实：{detail}");
+            if detail.contains("配置") || detail.contains("凭据") || detail.contains("登录") {
+                text.push_str(" 可先修复原配置范围内的该项，再选择 retry。");
+            }
+            text
+        }
+    };
+    label.push_str(" retry 把同一条消息重新排队给原团队负责人，不表示工作已经继续。");
+    label
+}
+
+fn choices() -> Value {
+    json!({
+        "retry": "把同一条消息重新排队给原团队负责人。不表示工作已经继续，不授予权限，不解除未知资源，不重置额度。",
+        "wait": "保留本待决定事项。不重新排队，不取消任务。",
+        "cancel": "提交任务取消，并等待资源停止后才关闭。不把仍有活动资源的任务立刻标成已结束。"
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::files_differ;
+    use crate::content::FileEntry;
+
+    fn entry(path: &str, sha: &str) -> FileEntry {
+        FileEntry {
+            path: path.into(),
+            sha256: sha.into(),
+            size: 1,
+            executable: false,
+        }
+    }
+
+    #[test]
+    fn file_difference_ignores_order_and_rejects_duplicate_paths() {
+        let left = vec![entry("a", "1"), entry("b", "2")];
+        let right = vec![entry("b", "2"), entry("a", "1")];
+        assert!(!files_differ(&left, &right));
+        let changed = vec![entry("a", "9"), entry("b", "2")];
+        assert!(files_differ(&left, &changed));
+        let duplicated = vec![entry("a", "1"), entry("a", "1")];
+        assert!(files_differ(&left, &duplicated));
+    }
 }
