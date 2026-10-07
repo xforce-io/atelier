@@ -1,6 +1,8 @@
 # L2 技术设计：部署成员在本机部署，由核心核对结果
 
-版本：v0.4，2026-10-07；状态：Approved（2026-10-07 用户审查通过）。依据：[L1 v0.4](product.md)、[Issue #22](https://github.com/xforce-io/atelier/issues/22)。改写 [部署职责 L2 v0.1](../5-deploy-duty/technical.md) 第 4 节「提交」。工作区格式从 23 升到 24。
+版本：v0.5，2026-10-07；状态：Approved（2026-10-07 用户审查通过；同日确认 L1 v0.5 的范围边界）。依据：[L1 v0.5](product.md)、[Issue #22](https://github.com/xforce-io/atelier/issues/22)。改写 [部署职责 L2 v0.1](../5-deploy-duty/technical.md) 第 4 节「提交」。工作区格式从 23 升到 24。
+
+v0.5 相对 v0.4：落实 L1 R13。命令执行不解析参数含义；`deploy_verify` 才把核对绑定到已验收产出，并通过后关闭任务。数据仍挂在部署记录上，不新增操作类型。用户可见行为与 v0.4 相同。
 
 ## 1. 数据
 
@@ -147,6 +149,8 @@ atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kai
 
 ## 6. 本机命令
 
+执行器只启动 `argv`，不解释这条命令是在部署、迁移还是做别的事。`HostCommand` 挂在 `DeployRecord` 上，是因为本期只有部署使用它（L1 R13）。不新增 `Operation`，也不做第二套执行器。
+
 ### 6.1 提交
 
 成员工具 `host_exec` 只在 `purpose=deploy` 的运行中提供：
@@ -214,6 +218,8 @@ atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kai
 - `queued` 且 `epoch` 不同的命令退回为未领取。这类命令尚未启动，可以执行。
 
 ## 7. 核对
+
+`deploy_verify` 是本期把「按登记方式核对」绑定到部署的那一层：对照物是已验收产出与改动清单，通过后关闭任务且 `outcome=deployed`。文件比对与核对命令的执行方式以后可以复用；本期不提供其他核对入口，也不因其他断言关闭任务。
 
 成员工具 `deploy_verify { revision }` 只在部署运行中提供。CLI 为 `task deploy verify --id T --revision N`；本人须没有活动 Run，且运行服务在运行。
 
@@ -308,3 +314,4 @@ atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kai
 - **核对命令以本人身份运行，不经确认。** 它由本人登记，部署成员不能修改；但部署成员可以通过本机命令改动它所检查的对象。
 - **只支持 macOS 与 Linux。** 进程组信号依赖 `/bin/kill`。其他平台遇到时直接失败。
 - **长时间等待确认。** 等待确认没有超时，部署会一直开放，由本人在 `pendingDecisions` 里处理。
+- **命令与核对仍挂在部署记录上。** 执行器不理解部署，但存储、权限和任务结果都按部署绑定。出现第二个操作时再拆类型；本期不预留空的操作表。
