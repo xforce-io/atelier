@@ -17,6 +17,7 @@ Issue #1：异步团队、CLI 与产品 Atelier Skill，L1 v0.10 / L2 v0.28。20
 | [leader-continues-stop.md](leader-continues-stop.md) | Issue #20 / S1.A1–S5.A1 | 有新事实的停止交给团队负责人；同一种空停止不再自动排队；普通停住不新增恢复事项；已受理代码执行不能原样重试；第 3 次返工不被旧默认上限拒绝。 |
 | [asynchronous-team.md](asynchronous-team.md) | S7 / A1–A5 | 数字团队不依赖宿主阶段调用，从提交目标持续处理工作消息到人类待办；含普通说明与消息循环。 |
 | [deploy-duty.md](deploy-duty.md) | Issue #5 / S1.A1–A6 | 显式部署职责收到部署投递；验收记录与部署结果分开；未部署不关闭。无该职责的团队仍在接受后关闭。 |
+| [host-environment-deploy.md](host-environment-deploy.md) | Issue #22 / S1.A1–S4.A5 | 登记本机部署目标、导出已验收产出、部署成员经确认执行本机命令、核心按登记方式核对后关闭为已部署。 |
 
 冻结检查名称与检查记录 ID 的可发现性修复已分别由原真实任务和 Grok 负责人复核，详见实现记录；历史计数保留在对应日期小节，以本文顶部的逐项审计为当前状态。
 

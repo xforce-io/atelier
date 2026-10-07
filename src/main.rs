@@ -53,6 +53,8 @@ enum Top {
     #[command(subcommand)]
     Team(TeamCommand),
     #[command(subcommand)]
+    Environment(EnvironmentCommand),
+    #[command(subcommand)]
     Task(TaskCommand),
     #[command(subcommand)]
     Mailbox(MailboxCommand),
@@ -218,6 +220,60 @@ enum RuntimeCommand {
     Stop,
     /// 独占核对旧资源，不领取投递；服务持锁时拒绝。
     Reconcile,
+}
+
+#[derive(Subcommand)]
+enum EnvironmentCommand {
+    Create {
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        code_root: String,
+        #[arg(long)]
+        port: Option<u16>,
+        #[arg(long)]
+        health_path: Option<String>,
+        #[arg(long, value_enum)]
+        approval: Option<CommandApproval>,
+        #[arg(long)]
+        verify_timeout: Option<u32>,
+        #[arg(last = true)]
+        verify_argv: Vec<String>,
+    },
+    Update {
+        name: String,
+        #[arg(long)]
+        revision: u64,
+        #[arg(long)]
+        code_root: Option<String>,
+        #[arg(long)]
+        port: Option<u16>,
+        #[arg(long)]
+        health_path: Option<String>,
+        #[arg(long)]
+        no_service: bool,
+        #[arg(long, value_enum)]
+        approval: Option<CommandApproval>,
+        #[arg(long)]
+        verify_timeout: Option<u32>,
+        #[arg(long)]
+        verify_files: bool,
+        #[arg(last = true)]
+        verify_argv: Vec<String>,
+    },
+    List,
+    Show {
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum DeployAction {
+    Verify {
+        id: String,
+        #[arg(long)]
+        revision: u64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -420,13 +476,8 @@ enum TaskCommand {
         instruction: String,
     },
     Deploy {
-        id: String,
-        #[arg(long)]
-        revision: u64,
-        #[arg(long)]
-        result: DeployResult,
-        #[arg(long)]
-        reason: String,
+        #[command(subcommand)]
+        action: DeployAction,
     },
     Execute {
         id: String,
@@ -442,6 +493,8 @@ enum TaskCommand {
         team: String,
         #[arg(long)]
         goal: String,
+        #[arg(long)]
+        deploy_environment: Option<String>,
     },
     Update {
         #[arg(long)]
@@ -461,6 +514,8 @@ enum TaskCommand {
         code_input: Option<String>,
         #[arg(long)]
         verification_profile: Option<String>,
+        #[arg(long)]
+        deploy_environment: Option<String>,
         #[arg(long)]
         max_runs: Option<u32>,
         #[arg(long)]
@@ -753,15 +808,58 @@ fn run(cli: Cli) -> Result<Value> {
             return store.export_artifact(&id, &destination);
         }
         Top::Task(TaskCommand::Deploy {
-            id,
+            action: DeployAction::Verify { id, revision },
+        }) => {
+            let status = atelier::runtime::status(&cli.workspace)?;
+            if status["lockHeld"] != true || status["state"] != "running" {
+                return Err(Error::Unavailable("运行服务未在运行，不能发起核对".into()));
+            }
+            Command::DeployVerify {
+                id: id.clone(),
+                revision,
+            }
+        }
+        Top::Environment(EnvironmentCommand::List) => return store.environments(),
+        Top::Environment(EnvironmentCommand::Show { name }) => return store.environment(&name),
+        Top::Environment(EnvironmentCommand::Create {
+            name,
+            code_root,
+            port,
+            health_path,
+            approval,
+            verify_timeout,
+            verify_argv,
+        }) => Command::EnvironmentCreate {
+            name,
+            code_root,
+            port,
+            health_path,
+            approval: approval.unwrap_or(CommandApproval::Ask),
+            verify_timeout,
+            verify_argv,
+        },
+        Top::Environment(EnvironmentCommand::Update {
+            name,
             revision,
-            result,
-            reason,
-        }) => Command::DeployReport {
-            id,
+            code_root,
+            port,
+            health_path,
+            no_service,
+            approval,
+            verify_timeout,
+            verify_files,
+            verify_argv,
+        }) => Command::EnvironmentUpdate {
+            name,
             revision,
-            result,
-            reason,
+            code_root,
+            port,
+            health_path,
+            no_service,
+            approval,
+            verify_timeout,
+            verify_files,
+            verify_argv,
         },
         Top::Task(TaskCommand::Execute {
             id,
@@ -1075,9 +1173,14 @@ fn run(cli: Cli) -> Result<Value> {
         }
         Top::Task(TaskCommand::List) => return store.list("task"),
         Top::Task(TaskCommand::Show { id }) => return store.task_details(&id),
-        Top::Task(TaskCommand::Create { team, goal }) => Command::TaskCreate {
+        Top::Task(TaskCommand::Create {
+            team,
+            goal,
+            deploy_environment,
+        }) => Command::TaskCreate {
             team_id: team,
             goal,
+            deploy_environment: deploy_environment.clone(),
         },
         Top::Task(TaskCommand::Update {
             decision,
@@ -1089,6 +1192,7 @@ fn run(cli: Cli) -> Result<Value> {
             verification,
             code_input,
             verification_profile,
+            deploy_environment,
             max_runs,
             max_messages,
             max_reworks,
@@ -1104,6 +1208,7 @@ fn run(cli: Cli) -> Result<Value> {
                 verification,
                 code_input,
                 verification_profile,
+                deploy_environment,
                 max_runs,
                 max_messages,
                 max_reworks,
@@ -1173,7 +1278,42 @@ fn run(cli: Cli) -> Result<Value> {
     let request = cli.request_id.ok_or_else(|| {
         Error::Invalid("写操作需要 --request-id；超时后按该 ID 查询或重试".into())
     })?;
-    store.execute(&request, &command)
+    let value = store.execute(&request, &command)?;
+    if let Command::DeployVerify { id, .. } = &command {
+        return poll_verification(&cli.workspace, id, value);
+    }
+    Ok(value)
+}
+
+fn poll_verification(
+    workspace: &std::path::Path,
+    task_id: &str,
+    submitted: Value,
+) -> Result<Value> {
+    use std::time::{Duration, Instant};
+    let verification_id = submitted["verificationId"]
+        .as_str()
+        .ok_or_else(|| Error::Invalid("核对提交结果缺失".into()))?
+        .to_string();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        let store = Store::open(workspace)?;
+        let task = store.task(task_id)?;
+        if let Some(verification) = task.deploy.as_ref().and_then(|record| {
+            record
+                .verifications
+                .iter()
+                .find(|item| item.id == verification_id)
+        }) {
+            if verification.state != "queued" && verification.state != "running" {
+                return Ok(json!({"verification": verification, "task": task}));
+            }
+        }
+        if Instant::now() >= deadline {
+            return Err(Error::Unavailable("核对在 60 秒内没有结束".into()));
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
 }
 
 fn main() -> ExitCode {

@@ -68,6 +68,8 @@ pub struct Contract {
     pub code_input: Option<String>,
     #[serde(default)]
     pub verification_profile: Option<String>,
+    #[serde(default)]
+    pub deploy_environment: Option<String>,
     pub inputs: String,
     pub delivery: String,
     pub verification: String,
@@ -81,6 +83,7 @@ impl Default for Contract {
         Self {
             code_input: None,
             verification_profile: None,
+            deploy_environment: None,
             inputs: String::new(),
             delivery: String::new(),
             verification: String::new(),
@@ -95,6 +98,7 @@ impl Default for Contract {
 pub struct ContractPatch {
     pub code_input: Option<String>,
     pub verification_profile: Option<String>,
+    pub deploy_environment: Option<String>,
     pub inputs: Option<String>,
     pub delivery: Option<String>,
     pub verification: Option<String>,
@@ -111,6 +115,10 @@ impl ContractPatch {
                 .verification_profile
                 .clone()
                 .or_else(|| old.verification_profile.clone()),
+            deploy_environment: self
+                .deploy_environment
+                .clone()
+                .or_else(|| old.deploy_environment.clone()),
             inputs: self.inputs.clone().unwrap_or_else(|| old.inputs.clone()),
             delivery: self
                 .delivery
@@ -153,6 +161,8 @@ pub struct Task {
     pub state: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deploy: Option<DeployRecord>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment_snapshot: Option<Environment>,
     pub cancellation_requested: bool,
     pub outcome: Option<String>,
     pub owner: Option<String>,
@@ -185,18 +195,111 @@ pub struct Run {
     pub process_identity: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, clap::ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum CommandApproval {
+    Ask,
+    Auto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum VerifyMethod {
+    Files,
+    Command {
+        argv: Vec<String>,
+        timeout_seconds: u32,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HostService {
+    pub port: u16,
+    pub health_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Environment {
+    pub id: String,
+    pub name: String,
+    pub code_root: String,
+    pub service: Option<HostService>,
+    pub verification: VerifyMethod,
+    pub approval: CommandApproval,
+    pub revision: u64,
+}
+
+impl Environment {
+    pub(crate) fn same_registration(&self, other: &Environment) -> bool {
+        self.name == other.name
+            && self.code_root == other.code_root
+            && self.service == other.service
+            && self.verification == other.verification
+            && self.approval == other.approval
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeployChange {
+    pub path: String,
+    pub action: String,
+    pub sha256: Option<String>,
+    pub executable: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeployExport {
+    pub dir: String,
+    pub artifact_id: String,
+    pub baseline_input_id: String,
+    pub changes: Vec<DeployChange>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HostCommand {
+    pub id: String,
+    pub run_id: String,
+    pub argv: Vec<String>,
+    pub cwd: String,
+    pub timeout_seconds: u32,
+    pub reason: String,
+    pub state: String,
+    pub decision_id: Option<String>,
+    pub epoch: Option<String>,
+    pub pgid: Option<u32>,
+    pub exit_code: Option<i32>,
+    pub output_tail: Option<String>,
+    pub log_path: Option<String>,
+    pub started_at: Option<String>,
+    pub ended_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DeployVerification {
+    pub id: String,
+    pub requested_by: String,
+    pub state: String,
+    pub epoch: Option<String>,
+    pub method: String,
+    pub mismatches: Vec<String>,
+    pub exit_code: Option<i32>,
+    pub output_tail: Option<String>,
+    pub log_path: Option<String>,
+    pub health: Option<String>,
+    pub ended_at: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeployRecord {
     pub state: String,
     pub acceptance_id: String,
     pub reason: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, clap::ValueEnum)]
-#[serde(rename_all = "snake_case")]
-pub enum DeployResult {
-    Succeeded,
-    Failed,
+    #[serde(default)]
+    pub export: Option<DeployExport>,
+    #[serde(default)]
+    pub commands: Vec<HostCommand>,
+    #[serde(default)]
+    pub verifications: Vec<DeployVerification>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, clap::ValueEnum)]
@@ -319,11 +422,30 @@ pub enum Command {
         revision: u64,
         instruction: String,
     },
-    DeployReport {
+    EnvironmentCreate {
+        name: String,
+        code_root: String,
+        port: Option<u16>,
+        health_path: Option<String>,
+        approval: CommandApproval,
+        verify_timeout: Option<u32>,
+        verify_argv: Vec<String>,
+    },
+    EnvironmentUpdate {
+        name: String,
+        revision: u64,
+        code_root: Option<String>,
+        port: Option<u16>,
+        health_path: Option<String>,
+        no_service: bool,
+        approval: Option<CommandApproval>,
+        verify_timeout: Option<u32>,
+        verify_files: bool,
+        verify_argv: Vec<String>,
+    },
+    DeployVerify {
         id: String,
         revision: u64,
-        result: DeployResult,
-        reason: String,
     },
     CredentialSet {
         id: String,
@@ -400,6 +522,8 @@ pub enum Command {
     TaskCreate {
         team_id: String,
         goal: String,
+        #[serde(default)]
+        deploy_environment: Option<String>,
     },
     TaskUpdate {
         #[serde(default)]

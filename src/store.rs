@@ -106,6 +106,12 @@ fn validate_contract_refs(db: &Connection, contract: &Contract, accepting: bool)
             return Err(Error::Conflict("检验配置摘要不匹配".into()));
         }
     }
+    if let Some(name) = &contract.deploy_environment {
+        crate::environment::load_named(db, name)?;
+        if contract.code_input.is_none() {
+            return Err(Error::Invalid("写了部署目标却没有代码输入".into()));
+        }
+    }
     Ok(())
 }
 
@@ -188,9 +194,17 @@ impl Store {
     }
 
     pub fn open(path: &Path) -> Result<Self> {
-        let db = Self::connect(path)?;
+        let mut db = Self::connect(path)?;
         let version: i64 = db.pragma_query_value(None, "user_version", |r| r.get(0))?;
-        if version != 23 {
+        if version == 23 {
+            let tx = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            tx.execute_batch(
+                "CREATE TABLE environments (id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data)));
+                 CREATE UNIQUE INDEX environments_by_name ON environments(json_extract(data,'$.name'));
+                 PRAGMA user_version = 24;",
+            )?;
+            tx.commit()?;
+        } else if version != 24 {
             return Err(Error::Invalid(format!(
                 "工作区格式不支持或初始化未完成：{version}；请保留原目录修复"
             )));
@@ -207,12 +221,74 @@ impl Store {
         })
     }
 
+    pub fn environments(&self) -> Result<Value> {
+        crate::environment::list(&self.connection)
+    }
+
+    pub fn environment(&self, name: &str) -> Result<Value> {
+        crate::environment::show(&self.connection, name)
+    }
+
+    /// Runs one queued host command or deploy verification whose task has no
+    /// active run. Command results do not bump the task revision, so the
+    /// following deploy delivery stays claimable.
+    pub fn drive_host_work(&mut self) -> Result<bool> {
+        let epoch: String = self
+            .connection
+            .query_row(
+                "SELECT epoch FROM runtime WHERE singleton=1 AND state='running' AND stop_requested=0",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| Error::Unavailable("运行服务未在运行".into()))?;
+        let Some(action) =
+            crate::host_work::claim(&mut self.connection, &epoch, &self.workspace_path)?
+        else {
+            return Ok(false);
+        };
+        match action {
+            crate::host_work::Action::Done => Ok(true),
+            crate::host_work::Action::Command(spec) => {
+                let id = spec.id.clone();
+                let task_id = spec.task_id.clone();
+                let mut started = match crate::host_work::spawn_command(spec) {
+                    Ok(started) => started,
+                    Err(error) => {
+                        let outcome = crate::host_work::Outcome::interrupted(
+                            &id,
+                            &task_id,
+                            &error.to_string(),
+                        );
+                        crate::host_work::finish(&mut self.connection, &epoch, outcome)?;
+                        return Ok(true);
+                    }
+                };
+                let pgid = started.pgid;
+                if let Err(error) =
+                    crate::host_work::record_pgid(&mut self.connection, &epoch, &id, &task_id, pgid)
+                {
+                    crate::host_work::stop_started(&mut started);
+                    return Err(error);
+                }
+                let outcome = crate::host_work::wait_command(started)?;
+                crate::host_work::finish(&mut self.connection, &epoch, outcome)?;
+                Ok(true)
+            }
+            crate::host_work::Action::Verify(spec) => {
+                let outcome = crate::host_work::execute_verify(spec)?;
+                crate::host_work::finish(&mut self.connection, &epoch, outcome)?;
+                Ok(true)
+            }
+        }
+    }
+
     pub fn workspace(&self) -> Result<Value> {
         let id: String = self
             .connection
             .query_row("SELECT id FROM workspace", [], |r| r.get(0))?;
         Ok(
-            json!({"id": id,"self": self.worker(&self.self_id)?,"schemaVersion":23,
+            json!({"id": id,"self": self.worker(&self.self_id)?,"schemaVersion":24,
             "capabilities":{"persistentCore":true,"runtimeLifecycle":true,"execution":true,"executionTransports":["api","agent-cli"]}}),
         )
     }
@@ -546,7 +622,13 @@ impl Store {
                 immutable(&tx, "profiles", &profile.id, &profile)?;
                 json!(profile)
             }
-            _ => apply(&tx, &self.self_id, request_id, command)?,
+            _ => apply(
+                &tx,
+                &self.self_id,
+                request_id,
+                command,
+                &self.workspace_path,
+            )?,
         };
         tx.execute(
             "INSERT INTO requests(actor,id,fingerprint,command,result) VALUES(?1,?2,?3,?4,?5)",
@@ -843,7 +925,13 @@ fn enqueue_with_source(
     Ok(json!({"messageId":id,"deliveryId":delivery,"status":"queued"}))
 }
 
-pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command) -> Result<Value> {
+pub(crate) fn apply(
+    db: &Connection,
+    actor: &str,
+    cause: &str,
+    command: &Command,
+    workspace: &Path,
+) -> Result<Value> {
     match command {
         Command::RecoveryApply { id, revision } => {
             crate::recovery::apply(db, actor, cause, id, *revision)
@@ -854,7 +942,7 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
             reason,
         } => crate::retry::apply(db, actor, cause, id, *revision, reason),
         Command::AcceptanceRequest { .. } | Command::AcceptanceDecide { .. } => {
-            crate::acceptance::apply(db, actor, cause, command)
+            crate::acceptance::apply(db, actor, cause, command, workspace)
         }
         Command::BlockerResolve {
             id,
@@ -1087,7 +1175,13 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
                         ],
                         Permission::Execute => vec!["assignment.execute", "assignment.rework"],
                         Permission::Verify => vec!["handoff.verify"],
-                        Permission::Deploy => vec!["assignment.deploy"],
+                        Permission::Deploy => {
+                            vec![
+                                "assignment.deploy",
+                                "host_command.result",
+                                "deploy.verification",
+                            ]
+                        }
                         Permission::Communicate => vec![
                             "intake",
                             "intake.updated",
@@ -1115,7 +1209,11 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
             let stopped_runs = crate::runs::stop_revoked(db, team_id, revoke)?;
             Ok(json!({"team":team,"blockedDeliveries":affected,"activeRuns":stopped_runs}))
         }
-        Command::TaskCreate { team_id, goal } => {
+        Command::TaskCreate {
+            team_id,
+            goal,
+            deploy_environment,
+        } => {
             text(goal, "目标", 65536)?;
             let team: Team = load(db, "teams", team_id)?;
             let recipient = team.leader.clone();
@@ -1133,10 +1231,16 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
                 owner: None,
                 revision: 1,
                 contract: Contract::default(),
+                environment_snapshot: None,
                 messages_used: 0,
                 runs_used: 0,
                 reworks_used: 0,
             };
+            if let Some(name) = deploy_environment {
+                task.contract.deploy_environment = Some(name.clone());
+                validate_contract_refs(db, &task.contract, false)?;
+                task.environment_snapshot = Some(crate::environment::load_named(db, name)?);
+            }
             save_task(db, &task)?;
             let message = enqueue(
                 db,
@@ -1206,6 +1310,13 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
             }
             if let Some(decision_id) = decision_id {
                 crate::decisions::bind_change(db, decision_id, actor, cause, Some(id), None)?;
+            }
+            let name_changed = contract.deploy_environment != task.contract.deploy_environment;
+            if name_changed || (*refresh_team && contract.deploy_environment.is_some()) {
+                task.environment_snapshot = match &contract.deploy_environment {
+                    Some(name) => Some(crate::environment::load_named(db, name)?),
+                    None => None,
+                };
             }
             task.goal = goal.clone();
             task.contract = contract;
@@ -1381,12 +1492,15 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
             )?;
             Ok(json!({"id":id,"revision":version+1,"status":"handled","reason":reason}))
         }
-        Command::DeployReport {
-            id,
-            revision: expected,
-            result,
-            reason,
-        } => crate::deploy::report(db, actor, id, *expected, *result, reason),
+        Command::EnvironmentCreate { .. } => {
+            crate::environment::create(db, actor, workspace, command)
+        }
+        Command::EnvironmentUpdate { .. } => {
+            crate::environment::update(db, actor, workspace, command)
+        }
+        Command::DeployVerify { id, revision } => {
+            crate::host_work::request_verification(db, actor, id, *revision, None)
+        }
         Command::TaskCancel {
             id,
             revision: expected,

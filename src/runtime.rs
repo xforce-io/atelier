@@ -156,6 +156,10 @@ pub async fn serve(path: &Path, epoch: String) -> Result<()> {
         .await?;
     let result = async {
         client.runtime_recover_checks(epoch.clone()).await?;
+        let owner = epoch.clone();
+        client
+            .call(move |store| crate::host_work::recover(&mut store.connection, &owner))
+            .await?;
         let mut interval = tokio::time::interval(Duration::from_millis(500));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
@@ -176,6 +180,10 @@ pub async fn serve(path: &Path, epoch: String) -> Result<()> {
                 {
                     break;
                 }
+                continue;
+            }
+            let current = epoch.clone();
+            if drive_host(&client, &current, path).await? {
                 continue;
             }
             let current = epoch.clone();
@@ -223,6 +231,10 @@ pub async fn reconcile(path: &Path) -> Result<Value> {
             })
             .await?;
         let checks = client.runtime_recover_checks(epoch.clone()).await?;
+        let owner = epoch.clone();
+        client
+            .call(move |store| crate::host_work::recover(&mut store.connection, &owner))
+            .await?;
         let cli_resources = crate::cli_resources::recover(&client, &epoch).await?;
         let cli_logins = crate::cli_login::recover(&client, path).await?;
         let cli_probes = crate::connection_probe::recover(&client, path).await?;
@@ -272,4 +284,80 @@ pub async fn reconcile(path: &Path) -> Result<Value> {
     drop(client);
     database.close().await?;
     result
+}
+
+async fn drive_host(
+    client: &crate::database::DatabaseClient,
+    epoch: &str,
+    workspace: &Path,
+) -> Result<bool> {
+    let current = epoch.to_string();
+    let root = workspace.to_path_buf();
+    let Some(action) = client
+        .call(move |store| crate::host_work::claim(&mut store.connection, &current, &root))
+        .await?
+    else {
+        return Ok(false);
+    };
+    match action {
+        crate::host_work::Action::Done => Ok(true),
+        crate::host_work::Action::Command(spec) => {
+            let id = spec.id.clone();
+            let task_id = spec.task_id.clone();
+            let started = match crate::host_work::spawn_command(spec) {
+                Ok(started) => started,
+                Err(error) => {
+                    let outcome =
+                        crate::host_work::Outcome::interrupted(&id, &task_id, &error.to_string());
+                    let owner = epoch.to_string();
+                    client
+                        .call(move |store| {
+                            crate::host_work::finish(&mut store.connection, &owner, outcome)
+                        })
+                        .await?;
+                    return Ok(true);
+                }
+            };
+            let pgid = started.pgid;
+            let owner = epoch.to_string();
+            let command_id = id.clone();
+            let command_task = task_id.clone();
+            if let Err(error) = client
+                .call(move |store| {
+                    crate::host_work::record_pgid(
+                        &mut store.connection,
+                        &owner,
+                        &command_id,
+                        &command_task,
+                        pgid,
+                    )
+                })
+                .await
+            {
+                let mut started = started;
+                crate::host_work::stop_started(&mut started);
+                return Err(error);
+            }
+            let outcome =
+                tokio::task::spawn_blocking(move || crate::host_work::wait_command(started))
+                    .await
+                    .map_err(|_| Error::Unavailable("本机命令线程退出".into()))??;
+            let owner = epoch.to_string();
+            client
+                .call(move |store| crate::host_work::finish(&mut store.connection, &owner, outcome))
+                .await?;
+            Ok(true)
+        }
+        crate::host_work::Action::Verify(spec) => {
+            let outcome =
+                tokio::task::spawn_blocking(move || crate::host_work::execute_verify(spec))
+                    .await
+                    .map_err(|_| Error::Unavailable("部署核对线程退出".into()))??;
+            let owner = epoch.to_string();
+            client
+                .call(move |store| crate::host_work::finish(&mut store.connection, &owner, outcome))
+                .await?;
+            Ok(true)
+        }
+    }
 }

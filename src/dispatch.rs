@@ -198,6 +198,7 @@ mod tests {
                 &Command::TaskCreate {
                     team_id: team["id"].as_str().unwrap().into(),
                     goal: "检查停服边界".into(),
+                    deploy_environment: None,
                 },
             )
             .unwrap();

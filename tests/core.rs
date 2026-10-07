@@ -12,6 +12,8 @@ struct Fixture {
     store: Store,
     human: String,
     team: Team,
+    deploy_environment: Option<String>,
+    deploy_root: Option<TempDir>,
 }
 impl Fixture {
     fn new(digital_leader: bool) -> Self {
@@ -60,6 +62,8 @@ impl Fixture {
             store,
             human,
             team,
+            deploy_environment: None,
+            deploy_root: None,
         }
     }
     fn create(&mut self) -> Value {
@@ -69,6 +73,7 @@ impl Fixture {
                 &Command::TaskCreate {
                     team_id: self.team.id.clone(),
                     goal: "离线双人井字棋".into(),
+                    deploy_environment: None,
                 },
             )
             .unwrap()
@@ -122,7 +127,8 @@ fn create_and_retry_survive_process_connection_lifetime() {
                 "task",
                 &Command::TaskCreate {
                     team_id: f.team.id,
-                    goal: "离线双人井字棋".into()
+                    goal: "离线双人井字棋".into(),
+                    deploy_environment: None,
                 }
             )
             .unwrap(),
@@ -153,6 +159,7 @@ fn concurrent_connections_with_one_request_create_exactly_one_task() {
                         &Command::TaskCreate {
                             team_id: team,
                             goal: "same".into(),
+                            deploy_environment: None,
                         },
                     )
                     .unwrap()
@@ -175,7 +182,8 @@ fn message_insert_failure_rolls_back_task_and_request() {
                 "fault",
                 &Command::TaskCreate {
                     team_id: f.team.id.clone(),
-                    goal: "will fail".into()
+                    goal: "will fail".into(),
+                    deploy_environment: None,
                 }
             )
             .is_err()
@@ -189,6 +197,7 @@ fn message_insert_failure_rolls_back_task_and_request() {
             &Command::TaskCreate {
                 team_id: f.team.id,
                 goal: "will fail".into(),
+                deploy_environment: None,
             },
         )
         .unwrap();
@@ -384,7 +393,8 @@ fn same_request_with_different_content_conflicts() {
             "task",
             &Command::TaskCreate {
                 team_id: f.team.id,
-                goal: "different".into()
+                goal: "different".into(),
+                deploy_environment: None,
             }
         ),
         Err(Error::Conflict(_))
@@ -413,7 +423,8 @@ fn revoked_authorization_blocks_replay_and_cached_result_lookup() {
             "task",
             &Command::TaskCreate {
                 team_id: f.team.id,
-                goal: "离线双人井字棋".into()
+                goal: "离线双人井字棋".into(),
+                deploy_environment: None,
             }
         ),
         Err(Error::Forbidden(_))
@@ -465,6 +476,7 @@ fn configuration_change_does_not_change_accepted_task_snapshot() {
             &Command::TaskCreate {
                 team_id: f.team.id.clone(),
                 goal: "新任务".into(),
+                deploy_environment: None,
             },
         )
         .unwrap();
@@ -1404,6 +1416,7 @@ fn queued_messages_across_tasks_survive_restart_and_never_preempt_active_run() {
             &Command::TaskCreate {
                 team_id: f.team.id.clone(),
                 goal: "另一项排队任务".into(),
+                deploy_environment: None,
             },
         )
         .unwrap();
@@ -1615,6 +1628,7 @@ fn restart_after_launch_intent_preserves_unknown_and_rejects_new_runs_and_old_ep
             &Command::TaskCreate {
                 team_id: f.team.id.clone(),
                 goal: "另一个任务".into(),
+                deploy_environment: None,
             },
         )
         .unwrap();
@@ -2069,6 +2083,7 @@ fn shared_worker_configuration_does_not_transfer_authority_between_teams() {
             &Command::TaskCreate {
                 team_id: other_id.into(),
                 goal: "不能借用原团队的授权".into(),
+                deploy_environment: None,
             },
         )
         .unwrap();
@@ -3423,6 +3438,7 @@ fn member_update_cannot_change_frozen_role_configuration_or_read_other_task_deci
             &Command::TaskCreate {
                 team_id: f.team.id.clone(),
                 goal: "其他任务".into(),
+                deploy_environment: None,
             },
         )
         .unwrap();
@@ -4829,6 +4845,7 @@ fn handoff_rejects_partial_and_wrong_task_and_keeps_target_configuration_blocked
             &Command::TaskCreate {
                 team_id: f.team.id.clone(),
                 goal: "另一任务".into(),
+                deploy_environment: None,
             },
         )
         .unwrap();
@@ -4888,6 +4905,7 @@ impl Fixture {
             .unwrap();
         let task = self.create();
         let id = task["task"]["id"].as_str().unwrap();
+        let deploy_environment = self.deploy_environment.clone();
         self.store
             .execute(
                 "contract",
@@ -4899,6 +4917,7 @@ impl Fixture {
                     contract: ContractPatch {
                         code_input: Some(input["id"].as_str().unwrap().into()),
                         verification_profile: Some(profile["id"].as_str().unwrap().into()),
+                        deploy_environment,
                         ..generic_contract()
                     },
                     refresh_team: false,
@@ -6744,6 +6763,7 @@ fn native_context_binding_survives_restart_and_separates_task_purpose_and_config
             &Command::TaskCreate {
                 team_id: f.team.id.clone(),
                 goal: "另一个任务".into(),
+                deploy_environment: None,
             },
         )
         .unwrap();
@@ -7042,6 +7062,7 @@ fn real_keychain_runtime_owns_api_child_and_stop_does_not_handle_unfinished_deli
             &Command::TaskCreate {
                 team_id: f.team.id.clone(),
                 goal: "合成任务：仅测试独立执行进程的启动和停止，不声称业务完成".into(),
+                deploy_environment: None,
             },
         )
         .unwrap();
@@ -7116,6 +7137,7 @@ fn real_keychain_runtime_owns_api_child_and_stop_does_not_handle_unfinished_deli
             &Command::TaskCreate {
                 team_id: f.team.id.clone(),
                 goal: "合成任务：服务崩溃后的资源核对".into(),
+                deploy_environment: None,
             },
         )
         .unwrap();
@@ -12585,7 +12607,82 @@ fn add_deployer(f: &mut Fixture, grant: bool) -> (String, String) {
     )
 }
 
+fn ensure_deploy_target(f: &mut Fixture) {
+    if f.deploy_environment.is_some() {
+        return;
+    }
+    register_environment(
+        f,
+        "prod",
+        CommandApproval::Ask,
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+}
+
+fn register_environment(
+    f: &mut Fixture,
+    name: &str,
+    approval: CommandApproval,
+    port: Option<u16>,
+    health_path: Option<String>,
+    verify_argv: Vec<String>,
+    verify_timeout: Option<u32>,
+) -> std::path::PathBuf {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    f.store
+        .execute(
+            &format!("env-{name}"),
+            &Command::EnvironmentCreate {
+                name: name.into(),
+                code_root: root.to_string_lossy().into_owned(),
+                port,
+                health_path,
+                approval,
+                verify_timeout,
+                verify_argv,
+            },
+        )
+        .unwrap();
+    f.deploy_environment = Some(name.into());
+    f.deploy_root = Some(dir);
+    root
+}
+
+fn materialize_export(task: &Task, root: &std::path::Path) {
+    let export = task
+        .deploy
+        .as_ref()
+        .unwrap()
+        .export
+        .as_ref()
+        .expect("open deploy has an export");
+    for change in &export.changes {
+        let dest = root.join(&change.path);
+        match change.action.as_str() {
+            "write" => {
+                if let Some(parent) = dest.parent() {
+                    std::fs::create_dir_all(parent).unwrap();
+                }
+                std::fs::copy(std::path::Path::new(&export.dir).join(&change.path), &dest).unwrap();
+            }
+            "delete" => {
+                let _ = std::fs::remove_file(dest);
+            }
+            other => panic!("unknown deploy change {other}"),
+        }
+    }
+}
+
+fn drain_host(f: &mut Fixture) {
+    while f.store.drive_host_work().unwrap() {}
+}
+
 fn accept_for_deploy(f: &mut Fixture) -> (atelier::verification::Verification, Value) {
+    ensure_deploy_target(f);
     let (run, verification) = f.acceptance_fixture();
     f.store
         .runtime_run_observed_stopped("service", &run.id, "fixture resources stopped")
@@ -12672,11 +12769,9 @@ fn deploy_success_closes_separately_from_acceptance() {
     assert_eq!(accepted["acceptance"]["accepted"], true);
     let impersonated = f.store.execute(
         "impersonate-deploy",
-        &Command::DeployReport {
+        &Command::DeployVerify {
             id: verification.task_id.clone(),
             revision: accepted["task"]["revision"].as_u64().unwrap(),
-            result: DeployResult::Succeeded,
-            reason: "管理身份不能代报".into(),
         },
     );
     assert!(
@@ -12770,16 +12865,22 @@ fn deploy_success_closes_separately_from_acceptance() {
             &member_operation(
                 &run,
                 "deploy",
-                "task_deploy",
-                json!({
-                    "revision": accepted["task"]["revision"].as_u64().unwrap(),
-                    "result": "succeeded",
-                    "reason": "fixture deploy record"
-                }),
+                "deploy_verify",
+                json!({"revision": accepted["task"]["revision"].as_u64().unwrap()}),
             ),
         )
         .unwrap();
     assert_eq!(reported["ok"], true, "{reported}");
+    assert!(reported["data"]["verificationId"].is_string());
+    f.store
+        .runtime_run_observed_stopped("service", &run.id, "fixture deploy run stopped")
+        .unwrap();
+    let task = f.store.task(&verification.task_id).unwrap();
+    materialize_export(
+        &task,
+        std::path::Path::new(&task.environment_snapshot.as_ref().unwrap().code_root),
+    );
+    drain_host(&mut f);
     let task = f.store.task(&verification.task_id).unwrap();
     assert_eq!(task.state, "closed");
     assert_eq!(task.outcome.as_deref(), Some("deployed"));
@@ -12790,102 +12891,6 @@ fn deploy_success_closes_separately_from_acceptance() {
         .unwrap();
     assert!(record.accepted);
     assert_ne!(task.outcome.as_deref(), Some("accepted"));
-}
-
-#[test]
-fn deploy_failure_keeps_the_task_unfinished() {
-    let mut f = Fixture::new(false);
-    let (deployer, configuration) = add_deployer(&mut f, true);
-    let (verification, accepted) = accept_for_deploy(&mut f);
-    let delivery = f
-        .store
-        .mailbox(Some(&deployer))
-        .unwrap()
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|item| item["message"]["kind"] == "assignment.deploy")
-        .unwrap()["id"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    let run = f
-        .store
-        .runtime_claim("service", &delivery, &configuration)
-        .unwrap();
-    f.store.runtime_begin_launch("service", &run.id).unwrap();
-    let run = f
-        .store
-        .runtime_child_started("service", &run.id, 321, "fixture-deploy-failure")
-        .unwrap();
-    let binding = f.store.bind_member("service", &run.id).unwrap();
-    let revision = accepted["task"]["revision"].as_u64().unwrap();
-    let reported = f
-        .store
-        .member_call(
-            &binding,
-            &member_operation(
-                &run,
-                "deploy-fail",
-                "task_deploy",
-                json!({"revision": revision, "result": "failed", "reason": "fixture deploy failed"}),
-            ),
-        )
-        .unwrap();
-    assert_eq!(reported["ok"], true, "{reported}");
-    let running: String = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3"))
-        .unwrap()
-        .query_row(
-            "SELECT status FROM deliveries WHERE id=?1",
-            [&delivery],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(running, "claimed");
-    let task = f.store.task(&verification.task_id).unwrap();
-    assert_eq!(task.state, "active");
-    assert_eq!(task.outcome, None);
-    assert_eq!(task.deploy.as_ref().unwrap().state, "failed");
-    let again = f
-        .store
-        .member_call(
-            &binding,
-            &member_operation(
-                &run,
-                "deploy-again",
-                "task_deploy",
-                json!({"revision": task.revision, "result": "succeeded", "reason": "second try"}),
-            ),
-        )
-        .unwrap();
-    assert_eq!(again["ok"], false, "{again}");
-    assert_eq!(f.store.task(&verification.task_id).unwrap().state, "active");
-    let before = failure_count(&f, &verification.task_id);
-    assert_eq!(before, 1);
-    f.store
-        .runtime_run_observed_stopped("service", &run.id, "fixture deploy run stopped")
-        .unwrap();
-    assert_eq!(failure_count(&f, &verification.task_id), before);
-    let status: String = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3"))
-        .unwrap()
-        .query_row(
-            "SELECT status FROM deliveries WHERE id=?1",
-            [&delivery],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(status, "handled");
-}
-
-fn failure_count(f: &Fixture, task_id: &str) -> i64 {
-    rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3"))
-        .unwrap()
-        .query_row(
-            "SELECT count(*) FROM messages WHERE task_id=?1 AND kind='failure'",
-            [task_id],
-            |row| row.get(0),
-        )
-        .unwrap()
 }
 
 #[test]
@@ -12972,85 +12977,42 @@ fn assignment_deploy(f: &Fixture, worker: &str) -> Value {
 }
 
 #[test]
-fn human_deploy_failure_handles_the_unclaimed_assignment() {
-    let mut f = Fixture::new(false);
-    grant_human_deployer(&mut f);
-    let (verification, accepted) = accept_for_deploy(&mut f);
-    let delivery = assignment_deploy(&f, &f.human);
-    assert_eq!(delivery["status"], "queued");
-    let id = delivery["id"].as_str().unwrap();
-    let reported = f
-        .store
-        .execute(
-            "human-deploy-fail",
-            &Command::DeployReport {
-                id: verification.task_id.clone(),
-                revision: accepted["task"]["revision"].as_u64().unwrap(),
-                result: DeployResult::Failed,
-                reason: "human deploy failed".into(),
-            },
-        )
-        .unwrap();
-    let task = f.store.task(&verification.task_id).unwrap();
-    assert_eq!(task.state, "active");
-    assert_eq!(task.outcome, None);
-    assert_eq!(task.deploy.as_ref().unwrap().state, "failed");
-    assert_eq!(reported["task"]["revision"], task.revision);
-    let finished = assignment_deploy(&f, &f.human);
-    assert_eq!(finished["id"], id);
-    assert_eq!(finished["status"], "handled");
-    assert_eq!(finished["reason"], "human deploy failed");
-    let again = f.store.execute(
-        "human-deploy-again",
-        &Command::DeployReport {
-            id: verification.task_id.clone(),
-            revision: task.revision,
-            result: DeployResult::Succeeded,
-            reason: "second try".into(),
-        },
-    );
-    assert!(matches!(again, Err(Error::Conflict(_))), "{again:?}");
-    let retry = f
-        .store
-        .execute(
-            "human-deploy-retry",
-            &Command::MailboxRetry {
-                id: id.into(),
-                revision: finished["revision"].as_u64().unwrap(),
-                reason: "queued assignment cannot be cleared by retry".into(),
-            },
-        )
-        .unwrap();
-    assert_eq!(retry["delivery"]["status"], "handled");
-    assert_eq!(assignment_deploy(&f, &f.human)["status"], "handled");
-    assert_eq!(failure_count(&f, &verification.task_id), 1);
-}
-
-#[test]
 fn human_deploy_success_handles_the_unclaimed_assignment() {
     let mut f = Fixture::new(false);
     grant_human_deployer(&mut f);
     let (verification, accepted) = accept_for_deploy(&mut f);
     let delivery = assignment_deploy(&f, &f.human);
     assert_eq!(delivery["status"], "queued");
+    let task = f.store.task(&verification.task_id).unwrap();
+    materialize_export(
+        &task,
+        std::path::Path::new(&task.environment_snapshot.as_ref().unwrap().code_root),
+    );
+    let task_id = verification.task_id.clone();
     let reported = f
         .store
         .execute(
             "human-deploy-ok",
-            &Command::DeployReport {
-                id: verification.task_id,
+            &Command::DeployVerify {
+                id: task_id.clone(),
                 revision: accepted["task"]["revision"].as_u64().unwrap(),
-                result: DeployResult::Succeeded,
-                reason: "human deploy succeeded".into(),
             },
         )
         .unwrap();
-    assert_eq!(reported["task"]["state"], "closed");
-    assert_eq!(reported["task"]["outcome"], "deployed");
+    assert!(reported["verificationId"].is_string(), "{reported}");
+    drain_host(&mut f);
+    let task = f.store.task(&task_id).unwrap();
+    assert_eq!(task.state, "closed");
+    assert_eq!(task.outcome.as_deref(), Some("deployed"));
     let finished = assignment_deploy(&f, &f.human);
     assert_eq!(finished["id"], delivery["id"]);
     assert_eq!(finished["status"], "handled");
-    assert_eq!(finished["reason"], "human deploy succeeded");
+    assert_eq!(finished["reason"], "核对通过");
+    let record = f
+        .store
+        .acceptance_decision(&task.deploy.as_ref().unwrap().acceptance_id)
+        .unwrap();
+    assert!(record.accepted);
 }
 
 #[test]
@@ -13259,4 +13221,1257 @@ fn recovery_decisions(f: &Fixture, task: &str) -> Vec<serde_json::Value> {
         .filter(|item| item["kind"] == "recovery")
         .cloned()
         .collect()
+}
+
+fn bind_deploy_run(
+    f: &mut Fixture,
+    deployer: &str,
+    configuration: &str,
+) -> (Run, atelier::member::MemberBinding) {
+    let delivery = assignment_deploy(f, deployer)["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let run = f
+        .store
+        .runtime_claim("service", &delivery, configuration)
+        .unwrap();
+    f.store.runtime_begin_launch("service", &run.id).unwrap();
+    let run = f
+        .store
+        .runtime_child_started("service", &run.id, 4242, "fixture-host")
+        .unwrap();
+    let binding = f.store.bind_member("service", &run.id).unwrap();
+    (run, binding)
+}
+
+fn environment_update(name: &str, revision: u64, approval: Option<CommandApproval>) -> Command {
+    Command::EnvironmentUpdate {
+        name: name.into(),
+        revision,
+        code_root: None,
+        port: None,
+        health_path: None,
+        no_service: false,
+        approval,
+        verify_timeout: None,
+        verify_files: false,
+        verify_argv: Vec::new(),
+    }
+}
+
+fn command_state(f: &Fixture, task_id: &str) -> String {
+    f.store
+        .task(task_id)
+        .unwrap()
+        .deploy
+        .unwrap()
+        .commands
+        .last()
+        .unwrap()
+        .state
+        .clone()
+}
+
+fn wait_until(mut ready: impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while !ready() {
+        assert!(std::time::Instant::now() < deadline, "timed out waiting");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn stop_runtime(path: &std::path::Path) {
+    let _ = std::process::Command::new(env!("CARGO_BIN_EXE_atelier"))
+        .arg("--workspace")
+        .arg(path)
+        .args(["--json", "runtime", "stop"])
+        .output();
+    let status = atelier::runtime::status(path).unwrap();
+    if status["lockHeld"] == true {
+        if let Some(pid) = status["pid"].as_u64() {
+            let _ = std::process::Command::new("/bin/kill")
+                .args(["-KILL", &pid.to_string()])
+                .status();
+        }
+    }
+}
+
+#[test]
+fn workspace_23_migrates_to_24_and_creates_environments() {
+    let f = Fixture::new(false);
+    let path = f.dir.path().to_path_buf();
+    let sql = rusqlite::Connection::open(path.join("atelier.sqlite3")).unwrap();
+    sql.execute_batch("DROP TABLE environments; PRAGMA user_version = 23;")
+        .unwrap();
+    drop(sql);
+    drop(f.store);
+    let store = Store::open(&path).unwrap();
+    assert_eq!(store.workspace().unwrap()["schemaVersion"], 24);
+    assert_eq!(store.environments().unwrap(), json!([]));
+}
+
+#[test]
+fn environment_create_update_and_show_without_runtime_restart() {
+    let mut f = Fixture::new(false);
+    let root = register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let shown = f.store.environment("prod").unwrap();
+    assert_eq!(shown["name"], "prod");
+    assert_eq!(shown["code_root"], root.to_string_lossy().as_ref());
+    assert_eq!(shown["approval"], "ask");
+    assert!(shown["warning"].is_null());
+    let updated = f
+        .store
+        .execute(
+            "env-auto",
+            &environment_update("prod", 1, Some(CommandApproval::Auto)),
+        )
+        .unwrap();
+    assert_eq!(updated["revision"], 2);
+    assert_eq!(updated["approval"], "auto");
+    assert!(
+        updated["warning"]
+            .as_str()
+            .unwrap()
+            .contains("auto approval")
+    );
+    let status = atelier::runtime::status(f.dir.path()).unwrap();
+    assert_eq!(status["lockHeld"], false);
+    assert_ne!(status["state"], "running");
+}
+
+#[test]
+fn environment_cli_round_trip() {
+    let f = Fixture::new(false);
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let created = acceptance_cli(
+        &f,
+        "cli-env",
+        &[
+            "environment",
+            "create",
+            "--name",
+            "kairo-prod",
+            "--code-root",
+            root.to_str().unwrap(),
+            "--approval",
+            "auto",
+            "--verify-timeout",
+            "30",
+            "--",
+            "/bin/true",
+        ],
+    );
+    assert_eq!(created["data"]["verification"]["kind"], "command");
+    assert!(
+        created["data"]["warning"]
+            .as_str()
+            .unwrap()
+            .contains("auto approval")
+    );
+    let shown = acceptance_cli(&f, "cli-show", &["environment", "show", "kairo-prod"]);
+    assert_eq!(shown["data"]["name"], "kairo-prod");
+    let updated = acceptance_cli(
+        &f,
+        "cli-files",
+        &[
+            "environment",
+            "update",
+            "kairo-prod",
+            "--revision",
+            "1",
+            "--verify-files",
+        ],
+    );
+    assert_eq!(updated["data"]["verification"]["kind"], "files");
+    let listed = acceptance_cli(&f, "cli-list", &["environment", "list"]);
+    assert_eq!(listed["data"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn environment_registration_rejects_unsafe_paths_ports_and_overlaps() {
+    let mut f = Fixture::new(false);
+    let reject = |f: &mut Fixture, id: &str, command: Command| {
+        f.store.execute(id, &command).unwrap_err().to_string()
+    };
+    let bare = |root: &str| Command::EnvironmentCreate {
+        name: "bad".into(),
+        code_root: root.into(),
+        port: None,
+        health_path: None,
+        approval: CommandApproval::Ask,
+        verify_timeout: None,
+        verify_argv: Vec::new(),
+    };
+    assert!(reject(&mut f, "rel", bare("relative/path")).contains("绝对路径"));
+    assert!(reject(&mut f, "missing", bare("/tmp/atelier-missing-env-22")).contains("不存在"));
+    let real = tempfile::tempdir().unwrap();
+    let link_dir = tempfile::tempdir().unwrap();
+    let link = link_dir.path().join("link");
+    std::os::unix::fs::symlink(real.path(), &link).unwrap();
+    assert!(reject(&mut f, "link", bare(&link.to_string_lossy())).contains("符号链接"));
+    let home = std::fs::canonicalize(std::env::var("HOME").unwrap()).unwrap();
+    assert!(reject(&mut f, "home", bare(&home.to_string_lossy())).contains("家目录"));
+    assert!(reject(&mut f, "root", bare("/")).contains("家目录"));
+    let workspace = std::fs::canonicalize(f.dir.path()).unwrap();
+    assert!(reject(&mut f, "ws", bare(&workspace.to_string_lossy())).contains("工作区"));
+    if let Ok(ssh) = std::fs::canonicalize(home.join(".ssh")) {
+        if ssh.is_dir() {
+            assert!(reject(&mut f, "ssh", bare(&ssh.to_string_lossy())).contains("登录材料"));
+        }
+    }
+    let root = register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        Some(23456),
+        Some("/health".into()),
+        Vec::new(),
+        None,
+    );
+    let nested = root.join("nested");
+    std::fs::create_dir(&nested).unwrap();
+    let overlap = Command::EnvironmentCreate {
+        name: "other".into(),
+        code_root: std::fs::canonicalize(&nested)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned(),
+        port: None,
+        health_path: None,
+        approval: CommandApproval::Ask,
+        verify_timeout: None,
+        verify_argv: Vec::new(),
+    };
+    assert!(reject(&mut f, "overlap", overlap).contains("重叠"));
+    let elsewhere = tempfile::tempdir().unwrap();
+    let elsewhere = std::fs::canonicalize(elsewhere.path()).unwrap();
+    let duplicate_port = Command::EnvironmentCreate {
+        name: "other".into(),
+        code_root: elsewhere.to_string_lossy().into_owned(),
+        port: Some(23456),
+        health_path: Some("/health".into()),
+        approval: CommandApproval::Ask,
+        verify_timeout: None,
+        verify_argv: Vec::new(),
+    };
+    assert!(reject(&mut f, "port", duplicate_port).contains("端口"));
+    let zero = Command::EnvironmentCreate {
+        name: "zero".into(),
+        code_root: {
+            let dir = tempfile::tempdir().unwrap();
+            let path = std::fs::canonicalize(dir.path()).unwrap();
+            // Keep the directory for the call; leaking one tempdir in a rejection test is acceptable
+            // only if we store it. Hold it by forgetting the path after canonicalize while dir lives.
+            std::mem::forget(dir);
+            path.to_string_lossy().into_owned()
+        },
+        port: Some(0),
+        health_path: Some("/".into()),
+        approval: CommandApproval::Ask,
+        verify_timeout: None,
+        verify_argv: Vec::new(),
+    };
+    assert!(reject(&mut f, "zero", zero).contains("端口不能为 0"));
+    let half = Command::EnvironmentCreate {
+        name: "half".into(),
+        code_root: {
+            let dir = tempfile::tempdir().unwrap();
+            let path = std::fs::canonicalize(dir.path()).unwrap();
+            std::mem::forget(dir);
+            path.to_string_lossy().into_owned()
+        },
+        port: Some(23457),
+        health_path: None,
+        approval: CommandApproval::Ask,
+        verify_timeout: None,
+        verify_argv: Vec::new(),
+    };
+    assert!(reject(&mut f, "half", half).contains("同时填写"));
+    let slash = Command::EnvironmentCreate {
+        name: "slash".into(),
+        code_root: {
+            let dir = tempfile::tempdir().unwrap();
+            let path = std::fs::canonicalize(dir.path()).unwrap();
+            std::mem::forget(dir);
+            path.to_string_lossy().into_owned()
+        },
+        port: Some(23458),
+        health_path: Some("health".into()),
+        approval: CommandApproval::Ask,
+        verify_timeout: None,
+        verify_argv: Vec::new(),
+    };
+    assert!(reject(&mut f, "slash", slash).contains("健康检查路径"));
+    assert!(
+        reject(
+            &mut f,
+            "name",
+            Command::EnvironmentCreate {
+                name: "Prod".into(),
+                code_root: root.to_string_lossy().into_owned(),
+                port: None,
+                health_path: None,
+                approval: CommandApproval::Ask,
+                verify_timeout: None,
+                verify_argv: Vec::new(),
+            }
+        )
+        .contains("环境名")
+    );
+    let command = Command::EnvironmentCreate {
+        name: "cmd".into(),
+        code_root: {
+            let dir = tempfile::tempdir().unwrap();
+            let path = std::fs::canonicalize(dir.path()).unwrap();
+            std::mem::forget(dir);
+            path.to_string_lossy().into_owned()
+        },
+        port: None,
+        health_path: None,
+        approval: CommandApproval::Ask,
+        verify_timeout: Some(0),
+        verify_argv: vec!["touch".into()],
+    };
+    let message = reject(&mut f, "argv", command);
+    assert!(
+        message.contains("绝对路径") || message.contains("超时"),
+        "{message}"
+    );
+}
+
+#[test]
+fn member_tools_do_not_offer_environment_registration() {
+    let mut f = Fixture::new(false);
+    let (deployer, configuration) = add_deployer(&mut f, true);
+    accept_for_deploy(&mut f);
+    let (run, binding) = bind_deploy_run(&mut f, &deployer, &configuration);
+    let names: Vec<_> = f.store.member_description(&binding).unwrap()["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap().to_string())
+        .collect();
+    assert!(names.contains(&"host_exec".to_string()));
+    assert!(names.contains(&"deploy_verify".to_string()));
+    assert!(
+        !names
+            .iter()
+            .any(|name| name.contains("environment") || name == "task_deploy")
+    );
+    let skill = f.store.member_description(&binding).unwrap()["skill"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(skill.contains("deploy_verify"));
+    drop(run);
+    let mut executor = Fixture::new(false);
+    let (_, binding, _) = executor.running_executor();
+    let names: Vec<_> = executor.store.member_description(&binding).unwrap()["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap().to_string())
+        .collect();
+    assert!(!names.contains(&"host_exec".to_string()));
+}
+
+#[test]
+fn accept_exports_read_only_artifact_and_change_list() {
+    let mut f = Fixture::new(false);
+    add_deployer(&mut f, true);
+    let (_, accepted) = accept_for_deploy(&mut f);
+    let task_id = accepted["task"]["id"].as_str().unwrap();
+    let task = f.store.task(task_id).unwrap();
+    let export = task.deploy.unwrap().export.unwrap();
+    assert!(
+        export
+            .changes
+            .iter()
+            .any(|change| change.action == "write" && change.path == "index.html")
+    );
+    assert!(
+        export
+            .changes
+            .iter()
+            .any(|change| change.action == "delete")
+    );
+    let export_dir = std::path::PathBuf::from(&export.dir);
+    std::fs::write(export_dir.parent().unwrap().join("owner-note"), b"keep").unwrap();
+    let error = std::fs::OpenOptions::new()
+        .write(true)
+        .open(export_dir.join("index.html"))
+        .unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+    let nested = std::fs::File::create(export_dir.join("extra.txt")).unwrap_err();
+    assert_eq!(nested.kind(), std::io::ErrorKind::PermissionDenied);
+}
+
+#[test]
+fn task_keeps_frozen_environment_after_registration_change() {
+    let mut f = Fixture::new(false);
+    add_deployer(&mut f, true);
+    let (_, accepted) = accept_for_deploy(&mut f);
+    let task_id = accepted["task"]["id"].as_str().unwrap().to_string();
+    let before = f
+        .store
+        .task(&task_id)
+        .unwrap()
+        .environment_snapshot
+        .unwrap();
+    f.store
+        .execute(
+            "freeze",
+            &environment_update("prod", 1, Some(CommandApproval::Auto)),
+        )
+        .unwrap();
+    let after = f
+        .store
+        .task(&task_id)
+        .unwrap()
+        .environment_snapshot
+        .unwrap();
+    assert_eq!(before, after);
+    assert_eq!(f.store.environment("prod").unwrap()["approval"], "auto");
+}
+
+#[test]
+fn accept_without_deploy_environment_or_with_changed_registration_blocks() {
+    let mut missing = Fixture::new(false);
+    add_deployer(&mut missing, true);
+    let (run, verification) = missing.acceptance_fixture();
+    missing
+        .store
+        .runtime_run_observed_stopped("service", &run.id, "fixture resources stopped")
+        .unwrap();
+    let request = missing.acceptance_request(&verification);
+    let accepted = missing
+        .store
+        .execute(
+            "accept-missing",
+            &acceptance_decide(&verification, &request, true),
+        )
+        .unwrap();
+    assert_eq!(accepted["task"]["deploy"]["state"], "blocked");
+    assert!(
+        accepted["task"]["deploy"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("没有点名部署目标环境")
+    );
+    let mut changed = Fixture::new(false);
+    add_deployer(&mut changed, true);
+    register_environment(
+        &mut changed,
+        "prod",
+        CommandApproval::Ask,
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let (run, verification) = changed.acceptance_fixture();
+    changed
+        .store
+        .runtime_run_observed_stopped("service", &run.id, "fixture resources stopped")
+        .unwrap();
+    changed
+        .store
+        .execute(
+            "change-before-accept",
+            &environment_update("prod", 1, Some(CommandApproval::Auto)),
+        )
+        .unwrap();
+    let request = changed.acceptance_request(&verification);
+    let accepted = changed
+        .store
+        .execute(
+            "accept-changed",
+            &acceptance_decide(&verification, &request, true),
+        )
+        .unwrap();
+    assert_eq!(accepted["task"]["deploy"]["state"], "blocked");
+    assert!(
+        accepted["task"]["deploy"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("登记已变化")
+    );
+}
+
+#[test]
+fn contract_rejects_unknown_environment_and_deploy_without_code_input() {
+    let mut f = Fixture::new(false);
+    let created = f.create();
+    let id = created["task"]["id"].as_str().unwrap();
+    let unknown = f.store.execute(
+        "unknown-env",
+        &Command::TaskUpdate {
+            decision_id: None,
+            id: id.into(),
+            revision: 1,
+            goal: None,
+            contract: ContractPatch {
+                deploy_environment: Some("missing".into()),
+                ..generic_contract()
+            },
+            refresh_team: false,
+        },
+    );
+    let message = unknown.unwrap_err().to_string();
+    assert!(message.contains("环境不存在"), "{message}");
+    register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let bare = f.store.execute(
+        "deploy-without-code",
+        &Command::TaskUpdate {
+            decision_id: None,
+            id: id.into(),
+            revision: 1,
+            goal: None,
+            contract: ContractPatch {
+                deploy_environment: Some("prod".into()),
+                ..generic_contract()
+            },
+            refresh_team: false,
+        },
+    );
+    assert!(bare.unwrap_err().to_string().contains("没有代码输入"));
+}
+
+struct RuntimeGuard<'a>(&'a std::path::Path);
+impl Drop for RuntimeGuard<'_> {
+    fn drop(&mut self) {
+        stop_runtime(self.0);
+    }
+}
+
+fn host_exec_call(
+    f: &mut Fixture,
+    binding: &atelier::member::MemberBinding,
+    run: &Run,
+    id: &str,
+    argv: &[&str],
+    timeout: Option<u32>,
+    cwd: &str,
+) -> Value {
+    let mut input = json!({
+        "argv": argv,
+        "cwd": cwd,
+        "reason": "fixture host command"
+    });
+    if let Some(timeout) = timeout {
+        input["timeoutSeconds"] = json!(timeout);
+    }
+    f.store
+        .member_call(binding, &member_operation(run, id, "host_exec", input))
+        .unwrap()
+}
+
+#[test]
+fn host_command_waits_for_approval_then_runs() {
+    let mut f = Fixture::new(false);
+    let (deployer, configuration) = add_deployer(&mut f, true);
+    let root = register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let (_, accepted) = accept_for_deploy(&mut f);
+    let task_id = accepted["task"]["id"].as_str().unwrap().to_string();
+    let (run, binding) = bind_deploy_run(&mut f, &deployer, &configuration);
+    let submitted = host_exec_call(
+        &mut f,
+        &binding,
+        &run,
+        "touch",
+        &["/usr/bin/touch", "approved-marker"],
+        None,
+        ".",
+    );
+    assert_eq!(
+        submitted["data"]["state"], "awaiting_approval",
+        "{submitted}"
+    );
+    let described = f
+        .store
+        .host_skill_description(None, Some(&task_id))
+        .unwrap();
+    let pending = &described["pendingDecisions"][0];
+    assert_eq!(pending["kind"], "host_command");
+    assert!(
+        pending["question"]
+            .as_str()
+            .unwrap()
+            .contains("approved-marker")
+    );
+    assert_eq!(pending["options"], json!(["执行", "拒绝"]));
+    f.store
+        .execute(
+            "approve-host",
+            &Command::DecisionRespond {
+                id: pending["id"].as_str().unwrap().into(),
+                revision: pending["revision"].as_u64().unwrap(),
+                answer: "执行".into(),
+            },
+        )
+        .unwrap();
+    assert_eq!(command_state(&f, &task_id), "queued");
+    f.store
+        .runtime_run_observed_stopped("service", &run.id, "fixture deploy run stopped")
+        .unwrap();
+    let _guard = RuntimeGuard(f.dir.path());
+    acceptance_cli(&f, "runtime-start", &["runtime", "start"]);
+    wait_until(|| command_state(&f, &task_id) == "exited");
+    assert!(root.join("approved-marker").is_file());
+}
+
+#[test]
+fn rejected_host_command_never_runs() {
+    let mut f = Fixture::new(false);
+    let (deployer, configuration) = add_deployer(&mut f, true);
+    let root = register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let (_, accepted) = accept_for_deploy(&mut f);
+    let task_id = accepted["task"]["id"].as_str().unwrap().to_string();
+    let (run, binding) = bind_deploy_run(&mut f, &deployer, &configuration);
+    host_exec_call(
+        &mut f,
+        &binding,
+        &run,
+        "touch",
+        &["/usr/bin/touch", "rejected-marker"],
+        None,
+        ".",
+    );
+    let pending = &f
+        .store
+        .host_skill_description(None, Some(&task_id))
+        .unwrap()["pendingDecisions"][0];
+    f.store
+        .execute(
+            "reject-host",
+            &Command::DecisionRespond {
+                id: pending["id"].as_str().unwrap().into(),
+                revision: pending["revision"].as_u64().unwrap(),
+                answer: "拒绝".into(),
+            },
+        )
+        .unwrap();
+    f.store
+        .runtime_run_observed_stopped("service", &run.id, "fixture deploy run stopped")
+        .unwrap();
+    assert!(!f.store.drive_host_work().unwrap());
+    assert_eq!(command_state(&f, &task_id), "rejected");
+    assert!(!root.join("rejected-marker").exists());
+}
+
+#[test]
+fn auto_approval_runs_without_decision() {
+    let mut f = Fixture::new(false);
+    let (deployer, configuration) = add_deployer(&mut f, true);
+    let root = register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Auto,
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let (_, accepted) = accept_for_deploy(&mut f);
+    let task_id = accepted["task"]["id"].as_str().unwrap().to_string();
+    let (run, binding) = bind_deploy_run(&mut f, &deployer, &configuration);
+    let submitted = host_exec_call(
+        &mut f,
+        &binding,
+        &run,
+        "touch",
+        &["/usr/bin/touch", "auto-marker"],
+        None,
+        ".",
+    );
+    assert_eq!(submitted["data"]["state"], "queued", "{submitted}");
+    assert!(
+        f.store
+            .host_skill_description(None, Some(&task_id))
+            .unwrap()["pendingDecisions"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    f.store
+        .runtime_run_observed_stopped("service", &run.id, "fixture deploy run stopped")
+        .unwrap();
+    drain_host(&mut f);
+    assert_eq!(command_state(&f, &task_id), "exited");
+    assert!(root.join("auto-marker").is_file());
+    assert_eq!(
+        f.store.task(&task_id).unwrap().revision,
+        accepted["task"]["revision"].as_u64().unwrap()
+    );
+}
+
+#[test]
+fn host_exec_rejects_invalid_cwd_argv_timeout_concurrency_and_role() {
+    let mut f = Fixture::new(false);
+    let (deployer, configuration) = add_deployer(&mut f, true);
+    register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Auto,
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    accept_for_deploy(&mut f);
+    let (run, binding) = bind_deploy_run(&mut f, &deployer, &configuration);
+    let bad_cwd = host_exec_call(
+        &mut f,
+        &binding,
+        &run,
+        "cwd",
+        &["/bin/echo", "no"],
+        None,
+        "..",
+    );
+    assert_eq!(bad_cwd["ok"], false, "{bad_cwd}");
+    let bad_argv = host_exec_call(&mut f, &binding, &run, "argv", &["echo", "no"], None, ".");
+    assert_eq!(bad_argv["ok"], false, "{bad_argv}");
+    let bad_timeout = host_exec_call(
+        &mut f,
+        &binding,
+        &run,
+        "timeout",
+        &["/bin/echo", "no"],
+        Some(0),
+        ".",
+    );
+    assert_eq!(bad_timeout["ok"], false, "{bad_timeout}");
+    let queued = host_exec_call(
+        &mut f,
+        &binding,
+        &run,
+        "queued",
+        &["/bin/sleep", "30"],
+        None,
+        ".",
+    );
+    assert_eq!(queued["ok"], true, "{queued}");
+    let second = host_exec_call(
+        &mut f,
+        &binding,
+        &run,
+        "second",
+        &["/bin/echo", "later"],
+        None,
+        ".",
+    );
+    assert_eq!(second["ok"], false, "{second}");
+    assert!(
+        second["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("进行")
+    );
+    let mut executor = Fixture::new(false);
+    let (run, binding, _) = executor.running_executor();
+    let denied = host_exec_call(
+        &mut executor,
+        &binding,
+        &run,
+        "role",
+        &["/bin/echo", "no"],
+        None,
+        ".",
+    );
+    assert_eq!(denied["ok"], false, "{denied}");
+    assert_eq!(denied["error"]["code"], "forbidden");
+}
+
+#[test]
+fn host_command_timeout_kills_the_process_group() {
+    let mut f = Fixture::new(false);
+    let (deployer, configuration) = add_deployer(&mut f, true);
+    let root = register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Auto,
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let (_, accepted) = accept_for_deploy(&mut f);
+    let task_id = accepted["task"]["id"].as_str().unwrap().to_string();
+    let (run, binding) = bind_deploy_run(&mut f, &deployer, &configuration);
+    let script = format!("sleep 30 & echo $! > '{}'/child.pid; wait", root.display());
+    let submitted = host_exec_call(
+        &mut f,
+        &binding,
+        &run,
+        "sleep",
+        &["/bin/sh", "-c", &script],
+        Some(1),
+        ".",
+    );
+    assert_eq!(submitted["ok"], true, "{submitted}");
+    f.store
+        .runtime_run_observed_stopped("service", &run.id, "fixture deploy run stopped")
+        .unwrap();
+    drain_host(&mut f);
+    assert_eq!(command_state(&f, &task_id), "timed_out");
+    if let Ok(pid) = std::fs::read_to_string(root.join("child.pid")) {
+        let alive = std::process::Command::new("/bin/ps")
+            .args(["-p", pid.trim()])
+            .output()
+            .unwrap();
+        assert!(!alive.status.success(), "grandchild still alive: {pid}");
+    }
+}
+
+#[test]
+fn interrupted_host_command_is_recorded_unknown() {
+    let mut f = Fixture::new(false);
+    let (deployer, configuration) = add_deployer(&mut f, true);
+    register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Auto,
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let (_, accepted) = accept_for_deploy(&mut f);
+    let task_id = accepted["task"]["id"].as_str().unwrap().to_string();
+    let (run, binding) = bind_deploy_run(&mut f, &deployer, &configuration);
+    host_exec_call(
+        &mut f,
+        &binding,
+        &run,
+        "sleep",
+        &["/bin/sleep", "60"],
+        None,
+        ".",
+    );
+    f.store
+        .runtime_run_observed_stopped("service", &run.id, "fixture deploy run stopped")
+        .unwrap();
+    let _guard = RuntimeGuard(f.dir.path());
+    acceptance_cli(&f, "runtime-start", &["runtime", "start"]);
+    wait_until(|| {
+        let task = f.store.task(&task_id).unwrap();
+        let command = task.deploy.unwrap().commands.pop().unwrap();
+        command.state == "running" && command.pgid.is_some()
+    });
+    let pgid = f
+        .store
+        .task(&task_id)
+        .unwrap()
+        .deploy
+        .unwrap()
+        .commands
+        .pop()
+        .unwrap()
+        .pgid
+        .unwrap();
+    let pid = atelier::runtime::status(f.dir.path()).unwrap()["pid"]
+        .as_u64()
+        .unwrap();
+    std::process::Command::new("/bin/kill")
+        .args(["-KILL", &pid.to_string()])
+        .status()
+        .unwrap();
+    wait_until(|| atelier::runtime::status(f.dir.path()).unwrap()["lockHeld"] == false);
+    acceptance_cli(&f, "runtime-restart", &["runtime", "start"]);
+    wait_until(|| command_state(&f, &task_id) == "interrupted");
+    let tail = f
+        .store
+        .task(&task_id)
+        .unwrap()
+        .deploy
+        .unwrap()
+        .commands
+        .pop()
+        .unwrap()
+        .output_tail
+        .unwrap();
+    assert!(tail.contains("中断，结果未知"), "{tail}");
+    let _ = std::process::Command::new("/bin/kill")
+        .args(["-KILL", &format!("-{pgid}")])
+        .status();
+}
+
+fn health_server(status: std::sync::Arc<std::sync::atomic::AtomicU16>) -> u16 {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for incoming in listener.incoming() {
+            let Ok(mut stream) = incoming else { continue };
+            let mut buffer = [0_u8; 256];
+            let _ = stream.read(&mut buffer);
+            let code = status.load(std::sync::atomic::Ordering::SeqCst);
+            let response =
+                format!("HTTP/1.1 {code} X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            let _ = stream.write_all(response.as_bytes());
+        }
+    });
+    port
+}
+
+#[test]
+fn deploy_verify_passes_and_closes_as_deployed() {
+    let status = std::sync::Arc::new(std::sync::atomic::AtomicU16::new(200));
+    let port = health_server(status);
+    let mut f = Fixture::new(false);
+    grant_human_deployer(&mut f);
+    register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        Some(port),
+        Some("/health".into()),
+        Vec::new(),
+        None,
+    );
+    let (verification, accepted) = accept_for_deploy(&mut f);
+    let task_id = verification.task_id.clone();
+    let task = f.store.task(&task_id).unwrap();
+    materialize_export(
+        &task,
+        std::path::Path::new(&task.environment_snapshot.as_ref().unwrap().code_root),
+    );
+    f.store
+        .execute(
+            "verify-pass",
+            &Command::DeployVerify {
+                id: task_id.clone(),
+                revision: accepted["task"]["revision"].as_u64().unwrap(),
+            },
+        )
+        .unwrap();
+    drain_host(&mut f);
+    let task = f.store.task(&task_id).unwrap();
+    assert_eq!(task.state, "closed");
+    assert_eq!(task.outcome.as_deref(), Some("deployed"));
+    assert_eq!(
+        task.deploy.as_ref().unwrap().verifications[0]
+            .health
+            .as_deref(),
+        Some("200")
+    );
+    assert!(
+        f.store
+            .acceptance_decision(&task.deploy.as_ref().unwrap().acceptance_id)
+            .unwrap()
+            .accepted
+    );
+}
+
+#[test]
+fn deploy_verify_lists_mismatches_and_unhealthy_service_then_passes_after_fix() {
+    let status = std::sync::Arc::new(std::sync::atomic::AtomicU16::new(500));
+    let port = health_server(status.clone());
+    let mut f = Fixture::new(false);
+    grant_human_deployer(&mut f);
+    register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        Some(port),
+        Some("/health".into()),
+        Vec::new(),
+        None,
+    );
+    let (verification, accepted) = accept_for_deploy(&mut f);
+    let task_id = verification.task_id.clone();
+    let revision = accepted["task"]["revision"].as_u64().unwrap();
+    f.store
+        .execute(
+            "verify-fail",
+            &Command::DeployVerify {
+                id: task_id.clone(),
+                revision,
+            },
+        )
+        .unwrap();
+    drain_host(&mut f);
+    let task = f.store.task(&task_id).unwrap();
+    assert_eq!(task.state, "active");
+    let failed = &task.deploy.as_ref().unwrap().verifications[0];
+    assert_eq!(failed.state, "failed");
+    assert!(!failed.mismatches.is_empty());
+    assert_ne!(failed.health.as_deref(), Some("200"));
+    assert_eq!(task.revision, revision);
+    materialize_export(
+        &task,
+        std::path::Path::new(&task.environment_snapshot.as_ref().unwrap().code_root),
+    );
+    status.store(200, std::sync::atomic::Ordering::SeqCst);
+    f.store
+        .execute(
+            "verify-fix",
+            &Command::DeployVerify {
+                id: task_id.clone(),
+                revision,
+            },
+        )
+        .unwrap();
+    drain_host(&mut f);
+    let task = f.store.task(&task_id).unwrap();
+    assert_eq!(task.outcome.as_deref(), Some("deployed"));
+}
+
+#[test]
+fn deploy_verify_rejects_non_deployer_outside_run_pending_command_and_after_end() {
+    let mut f = Fixture::new(false);
+    let (deployer, configuration) = add_deployer(&mut f, true);
+    let (_, accepted) = accept_for_deploy(&mut f);
+    let task_id = accepted["task"]["id"].as_str().unwrap().to_string();
+    let revision = accepted["task"]["revision"].as_u64().unwrap();
+    let denied = f.store.execute(
+        "human-not-deployer",
+        &Command::DeployVerify {
+            id: task_id.clone(),
+            revision,
+        },
+    );
+    assert!(matches!(denied, Err(Error::Forbidden(_))), "{denied:?}");
+    let mut executor = Fixture::new(false);
+    let (run, binding, _) = executor.running_executor();
+    let outside = executor
+        .store
+        .member_call(
+            &binding,
+            &member_operation(
+                &run,
+                "outside",
+                "deploy_verify",
+                json!({"revision": run.task_revision}),
+            ),
+        )
+        .unwrap();
+    assert_eq!(outside["ok"], false, "{outside}");
+    let (run, binding) = bind_deploy_run(&mut f, &deployer, &configuration);
+    host_exec_call(
+        &mut f,
+        &binding,
+        &run,
+        "pending",
+        &["/bin/sleep", "30"],
+        None,
+        ".",
+    );
+    let pending = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(
+                &run,
+                "verify-pending",
+                "deploy_verify",
+                json!({"revision": revision}),
+            ),
+        )
+        .unwrap();
+    assert_eq!(pending["ok"], false, "{pending}");
+    assert!(
+        pending["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("进行")
+    );
+    let decision = f
+        .store
+        .host_skill_description(None, Some(&task_id))
+        .unwrap()["pendingDecisions"][0]
+        .clone();
+    f.store
+        .execute(
+            "clear-pending",
+            &Command::DecisionRespond {
+                id: decision["id"].as_str().unwrap().into(),
+                revision: decision["revision"].as_u64().unwrap(),
+                answer: "拒绝".into(),
+            },
+        )
+        .unwrap();
+    let queued = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(
+                &run,
+                "verify-queue",
+                "deploy_verify",
+                json!({"revision": revision}),
+            ),
+        )
+        .unwrap();
+    assert_eq!(queued["ok"], true, "{queued}");
+    f.store
+        .runtime_run_observed_stopped("service", &run.id, "stop before close")
+        .unwrap();
+    let task = f.store.task(&task_id).unwrap();
+    materialize_export(
+        &task,
+        std::path::Path::new(&task.environment_snapshot.as_ref().unwrap().code_root),
+    );
+    drain_host(&mut f);
+    assert_eq!(
+        f.store.task(&task_id).unwrap().outcome.as_deref(),
+        Some("deployed")
+    );
+    assert!(
+        f.store
+            .member_call(
+                &binding,
+                &member_operation(
+                    &run,
+                    "verify-after",
+                    "deploy_verify",
+                    json!({"revision": revision})
+                ),
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn human_deploy_verify_requires_running_runtime() {
+    let f = Fixture::new(false);
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_atelier"))
+        .arg("--workspace")
+        .arg(f.dir.path())
+        .args([
+            "--json",
+            "--request-id",
+            "no-runtime",
+            "task",
+            "deploy",
+            "verify",
+            "missing",
+            "--revision",
+            "1",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["ok"], false);
+    assert!(
+        value["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("运行服务未在运行")
+    );
+}
+
+#[test]
+fn deploy_verify_runs_registered_command_with_artifact_env() {
+    let mut f = Fixture::new(false);
+    grant_human_deployer(&mut f);
+    let script = "test -n \"$ATELIER_EXPORT_DIR\" && test -f \"$ATELIER_CHANGES_FILE\" && test -n \"$ATELIER_ARTIFACT_ID\" && test -n \"$ATELIER_TASK_ID\" && printf %s \"$ATELIER_ARTIFACT_DIGEST\" > \"$ATELIER_CODE_ROOT/seen.txt\"";
+    let root = register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        None,
+        None,
+        vec!["/bin/sh".into(), "-c".into(), script.into()],
+        Some(30),
+    );
+    let (verification, accepted) = accept_for_deploy(&mut f);
+    let task_id = verification.task_id.clone();
+    f.store
+        .execute(
+            "verify-command",
+            &Command::DeployVerify {
+                id: task_id.clone(),
+                revision: accepted["task"]["revision"].as_u64().unwrap(),
+            },
+        )
+        .unwrap();
+    drain_host(&mut f);
+    let task = f.store.task(&task_id).unwrap();
+    assert_eq!(task.outcome.as_deref(), Some("deployed"));
+    let seen = std::fs::read_to_string(root.join("seen.txt")).unwrap();
+    assert_eq!(
+        seen,
+        f.store
+            .artifact(&task.deploy.unwrap().export.unwrap().artifact_id)
+            .unwrap()
+            .content_digest
+    );
+}
+
+#[test]
+fn deploy_verify_rejects_after_registration_change() {
+    let mut f = Fixture::new(false);
+    grant_human_deployer(&mut f);
+    accept_for_deploy(&mut f);
+    let listed = f.store.list("task").unwrap();
+    let task = f
+        .store
+        .task(listed[0]["id"].as_str().unwrap())
+        .unwrap();
+    f.store
+        .execute(
+            "verify-queue",
+            &Command::DeployVerify {
+                id: task.id.clone(),
+                revision: task.revision,
+            },
+        )
+        .unwrap();
+    f.store
+        .execute(
+            "change-registration",
+            &environment_update("prod", 1, Some(CommandApproval::Auto)),
+        )
+        .unwrap();
+    drain_host(&mut f);
+    let task = f.store.task(&task.id).unwrap();
+    assert_eq!(task.state, "active");
+    assert_eq!(task.outcome, None);
+    assert_eq!(
+        task.deploy.as_ref().unwrap().verifications[0].state,
+        "failed"
+    );
+    assert!(
+        task.deploy.as_ref().unwrap().verifications[0]
+            .mismatches
+            .iter()
+            .any(|item| item.contains("登记已变化"))
+    );
 }

@@ -262,7 +262,7 @@ impl Store {
                     .is_some_and(|record| record.state == "open")
                 && allowed(Permission::Deploy)
             {
-                operations.push(operation("deploy.report","task deploy <Task> --revision <版本> --result succeeded|failed --reason <依据>","仅冻结部署成员提交部署结果。成功后任务关闭且结果为 deployed；失败保持未完成，不自动重试。核心不执行 compose、不合入、不 push。数字员工在部署运行中使用 task_deploy。"));
+                operations.push(operation("deploy.verify","task deploy verify <Task> --revision <版本>","仅冻结部署成员发起核对。运行服务须在运行。核心按登记方式判断已验收产出是否已在生产上，通过后任务关闭且结果为 deployed。不能自报。"));
             }
             if active
                 && allowed(Permission::Communicate)
@@ -360,6 +360,9 @@ pub(crate) fn member_bundle(run: &Run, tools: &[Value]) -> Result<Value> {
         "---\nname: atelier\ndescription: 处理当前绑定 Worker 的工作消息。\n---\n\n# Atelier 当前成员\n\n身份与 Task/Run/Delivery 由核心绑定，不能改用管理 CLI或自选角色。只用已装配工具，先 task_read，再按当前消息作决定。用途：{}。\n\n",
         run.purpose
     );
+    if names.contains(&"host_exec") {
+        root.push_str("部署：从导出目录取已验收文件，用 host_exec 完成改动，做完用 deploy_verify 请求核心核对。做不下去就报告阻塞，不能自报部署结果。\n\n");
+    }
     for path in files.keys() {
         root.push_str(&format!("读取 [{path}]({path})。\n"));
     }

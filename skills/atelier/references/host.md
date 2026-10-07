@@ -8,4 +8,6 @@
 
 导出使用指定 Artifact 到新目录或空目录，保留 partial 限制。导出不等于验收、合入或部署。遇到 unknown 先核对真实资源；不能修改数据库或假造停止结果以推进任务。
 
+登记本机环境前先问齐名称和代码目录。有服务时再问端口和健康检查路径。缺的字段不要猜测。若服务不是直接从代码目录运行，例如镜像、编译产物或已安装的包，建议一条核对命令，用户确认后再登记。用户要求自动执行时，先说明这等于把本人身份交给命令，命令可以调用 Atelier CLI。`pendingDecisions` 里 `host_command` 事项要原样展示问题、选项和影响，用户明确同意后才回应「执行」。
+
 CLI 连接检查须明确 `--worker`，在对应 `connection prepare` 和交互 `connection login` 后执行 `connection test`。查看 `connection show` 的 `workerReadiness`，不能把一个 Worker 的检查成功当成其他成员就绪。检查无业务 Task/Run；它会请求一次受控的原生模型诊断。旧请求仅重放或核对，修复后用新 requestId 重测。诊断中断时先按原请求或 `runtime reconcile` 核对所属资源，不导入宿主登录绕过专用环境。

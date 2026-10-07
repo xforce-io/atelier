@@ -94,7 +94,7 @@ async fn run() -> Result<Value> {
             },
         },
     )?)?;
-    let created=store.execute("task",&Command::TaskCreate {team_id:team.id,goal:"开发一个离线双人井字棋网页。当前仅请负责人澄清平局后如何继续：重开本局还是累计比分。规则由本人决定，先等待正式答复，不要擅自确定；本轮不承接、不编写代码、不声称交付。".into()})?;
+    let created=store.execute("task",&Command::TaskCreate {team_id:team.id,goal:"开发一个离线双人井字棋网页。当前仅请负责人澄清平局后如何继续：重开本局还是累计比分。规则由本人决定，先等待正式答复，不要擅自确定；本轮不承接、不编写代码、不声称交付。".into(),deploy_environment:None})?;
     let mut options = OpenOptions::new();
     options.create(true).read(true).write(true).truncate(false);
     #[cfg(unix)]

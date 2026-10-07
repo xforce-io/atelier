@@ -8,7 +8,7 @@ use crate::{
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 
-fn save(db: &Connection, decision: &DecisionRequest) -> Result<()> {
+pub(crate) fn save(db: &Connection, decision: &DecisionRequest) -> Result<()> {
     db.execute("INSERT INTO decisions(id,task_id,data) VALUES(?1,?2,?3) ON CONFLICT(id) DO UPDATE SET data=excluded.data", params![decision.id,decision.task_id,serde_json::to_string(decision)?])?;
     Ok(())
 }
@@ -93,6 +93,7 @@ pub(crate) fn supersede(
         }
         save(db, &decision)?;
     }
+    crate::host_work::cancel_waiting(db, task_id)?;
     Ok(())
 }
 
@@ -181,6 +182,9 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
             let mut decision: DecisionRequest = load(db, "decisions", id)?;
             if decision.kind == "recovery" {
                 return crate::recovery::respond(db, actor, id, *expected, answer);
+            }
+            if decision.kind == "host_command" {
+                return crate::host_work::respond(db, actor, id, *expected, answer);
             }
             let mut task = current(db, &decision)?;
             revision(decision.revision, *expected)?;

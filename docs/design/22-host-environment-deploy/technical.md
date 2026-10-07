@@ -4,6 +4,8 @@
 
 v0.5 相对 v0.4：落实 L1 R13。命令执行不解析参数含义；`deploy_verify` 才把核对绑定到已验收产出，并通过后关闭任务。数据仍挂在部署记录上，不新增操作类型。用户可见行为与 v0.4 相同。
 
+实现订正（产品行为不变）：记录命令结果或失败核对不增加 `task.revision`。任务仍有活动 Run 时不领取命令或核对。运行服务在主循环里领取，进程等待放在 `spawn_blocking` 中，使用 `std::process::Command`；这一轮不派发下一条工作。健康检查使用 `std::net::TcpStream`。
+
 ## 1. 数据
 
 新表 `environments(id TEXT PRIMARY KEY, data TEXT NOT NULL)`，并对 `json_extract(data,'$.name')` 建唯一索引：
@@ -194,9 +196,9 @@ atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kai
 
 ### 6.3 执行
 
-运行服务主循环每轮调用 `host_command::claim(epoch)`，把 `queued` 领为本 epoch 并改为 `running`，然后在独立的异步任务里执行，不占用数据库线程：
+运行服务主循环每轮先领取本机工作。该任务仍有活动 Run 时跳过。领到命令或核对后，本轮不再派发下一条工作。领取在数据库线程提交，进程等待放在 `spawn_blocking` 中，不占用数据库线程：
 
-- 用 `tokio::process::Command` 启动 `argv[0]`，参数为其余各项，工作目录为 `code_root/cwd`。
+- 用 `std::process::Command` 启动 `argv[0]`，参数为其余各项，工作目录为 `code_root/cwd`。
   - `process_group(0)`，标准输入为空。
   - 标准输出与标准错误追加到 `{workspace}/host-commands/{id}.log`。
   - 环境变量继承运行服务。
@@ -207,8 +209,8 @@ atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kai
   3. 状态记为 `timed_out`。
 - 正常退出时状态为 `exited`，记录 `exit_code`。
 - 进程组里残留的后台子进程按超时的方式结束，进程组即以 `-{pgid}` 发送信号的那一组。
-- 结束事务写入 `output_tail`、`ended_at`，向部署成员投递 `host_command.result`，正文包含 `commandId`、状态与退出码。
-- 结束事务要求 `epoch` 仍是本运行服务。
+- 结束事务写入 `output_tail`、`ended_at`，向部署成员投递 `host_command.result`，正文包含 `commandId`、状态与退出码。这次投递不增加 `task.revision`。
+- 结束事务要求 `epoch` 仍是本运行服务。失败核对同样不增加 `task.revision`。
 
 ### 6.4 中断
 
@@ -253,7 +255,7 @@ atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kai
        - `ATELIER_TASK_ID`
      - 退出码为 0 即通过。超时或非 0 即不通过，并记录 `exit_code` 与 `output_tail`。
 2. 有服务时做健康检查：
-   - 每 500ms 用 `tokio::net::TcpStream` 连接 `127.0.0.1:{port}`，发送 `GET {health_path} HTTP/1.1`，带 `Host: 127.0.0.1` 和 `Connection: close`，只读取状态行。
+   - 每 500ms 用 `std::net::TcpStream` 连接 `127.0.0.1:{port}`，发送 `GET {health_path} HTTP/1.1`，带 `Host: 127.0.0.1` 和 `Connection: close`，只读取状态行。
    - 30 秒内收到 200 即通过。
 3. 结束事务按结果处理：
    - 全部通过时为 `passed`：复用 `deploy::report` 中成功关闭的分支，改为内部调用。效果是关闭任务、`outcome=deployed`、作废待决定事项与阻塞、取消剩余投递、结束尚未领取的 `assignment.deploy`。

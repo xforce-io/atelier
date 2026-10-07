@@ -52,7 +52,7 @@ pub(crate) fn delivery_purpose(kind: &str) -> &'static str {
     match kind {
         "assignment.execute" => "execute",
         "assignment.rework" => "rework",
-        "assignment.deploy" => "deploy",
+        "assignment.deploy" | "host_command.result" | "deploy.verification" => "deploy",
         "handoff.verify" => "verify",
         _ => "coordinate",
     }
@@ -408,11 +408,22 @@ impl Store {
             return Err(Error::Forbidden("执行配置不属于该成员".into()));
         }
         let purpose = match kind.as_str() {
-            "assignment.execute" | "assignment.rework" | "assignment.deploy" | "handoff.verify"
-            | "intake" | "intake.updated" | "work.note" | "work.question" | "result"
-            | "failure" | "blocker" | "resolved" | "decision.request" | "decision.result" => {
-                delivery_purpose(&kind)
-            }
+            "assignment.execute"
+            | "assignment.rework"
+            | "assignment.deploy"
+            | "host_command.result"
+            | "deploy.verification"
+            | "handoff.verify"
+            | "intake"
+            | "intake.updated"
+            | "work.note"
+            | "work.question"
+            | "result"
+            | "failure"
+            | "blocker"
+            | "resolved"
+            | "decision.request"
+            | "decision.result" => delivery_purpose(&kind),
             _ => return Err(Error::Invalid("消息类别没有成员处理契约".into())),
         };
         if purpose != "coordinate" {

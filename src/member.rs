@@ -3,7 +3,7 @@
 use crate::{
     Error, Result,
     model::{
-        Command, ContractPatch, DecisionRequest, DecisionResolution, DeployResult, IntakeDecision,
+        Command, ContractPatch, DecisionRequest, DecisionResolution, IntakeDecision,
         OperationReference, Permission, Run, Task, Team,
     },
     runs::{check_run_authority, service},
@@ -76,7 +76,8 @@ enum MemberCommand {
     TaskUpdate(UpdateTask),
     TaskIntake(Intake),
     TaskArrange(Arrange),
-    TaskDeploy(ReportDeploy),
+    HostExec(HostExecInput),
+    DeployVerify(VerifyInput),
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -190,10 +191,16 @@ struct UpdateTask {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ReportDeploy {
-    revision: u64,
-    result: DeployResult,
+struct HostExecInput {
+    argv: Vec<String>,
+    cwd: Option<String>,
+    timeout_seconds: Option<u32>,
     reason: String,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VerifyInput {
+    revision: u64,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -472,7 +479,15 @@ impl Store {
         // Save business failures too: a retry must not turn an earlier rejected
         // call into a new effect after unrelated state changes.
         tx.execute_batch("SAVEPOINT member_effect;")?;
-        let effect = member_effect(&tx, &run, &task, operation, prepared, file);
+        let effect = member_effect(
+            &tx,
+            &run,
+            &task,
+            operation,
+            prepared,
+            file,
+            &self.workspace_path,
+        );
         let result = match effect {
             Ok(data) => json!({"ok":true,"data":data}),
             Err(
@@ -502,6 +517,7 @@ fn member_effect(
     operation: &ToolOperation,
     prepared: Option<&ValidatedIntake>,
     file: Option<&crate::candidate::Prepared>,
+    workspace: &std::path::Path,
 ) -> Result<Value> {
     let command: MemberCommand =
         serde_json::from_value(json!({"name":operation.name,"input":operation.input}))
@@ -641,43 +657,29 @@ fn member_effect(
                 input.handoff.as_deref(),
             );
         }
-        MemberCommand::TaskDeploy(input) => {
-            if run.purpose != "deploy"
-                || task.team_snapshot.deployer.as_deref() != Some(run.worker_id.as_str())
-                || !run.permissions.contains(&Permission::Deploy)
-            {
-                return Err(Error::Forbidden(
-                    "只有冻结部署成员的部署运行可以提交部署结果".into(),
-                ));
-            }
-            let result = apply(
+        MemberCommand::HostExec(input) => {
+            let mut current = task.clone();
+            return crate::host_work::submit(
                 db,
-                &run.worker_id,
-                &operation.operation_id,
-                &Command::DeployReport {
-                    id: task.id.clone(),
-                    revision: input.revision,
-                    result: input.result,
+                workspace,
+                run,
+                &mut current,
+                crate::host_work::SubmittedCommand {
+                    argv: input.argv,
+                    cwd: input.cwd.unwrap_or_else(|| ".".into()),
+                    timeout_seconds: input.timeout_seconds.unwrap_or(600),
                     reason: input.reason,
                 },
-            )?;
-            let current: Task = load(db, "tasks", &task.id)?;
-            let mut updated = run.clone();
-            updated.task_revision = current.revision;
-            crate::runs::save(db, &updated)?;
-            crate::disposition::record(
+            );
+        }
+        MemberCommand::DeployVerify(input) => {
+            return crate::host_work::request_verification(
                 db,
-                &updated,
-                &current,
-                json!({
-                    "kind": "deploy",
-                    "result": match input.result {
-                        DeployResult::Succeeded => "succeeded",
-                        DeployResult::Failed => "failed",
-                    }
-                }),
-            )?;
-            return Ok(result);
+                &run.worker_id,
+                &task.id,
+                input.revision,
+                Some(&run.id),
+            );
         }
         MemberCommand::TaskArrange(input) => {
             authorize_intake(db, run, task)?;
@@ -751,7 +753,7 @@ fn member_effect(
                     &operation.operation_id
                 ))?)
             );
-            let mut result = apply(db, &run.worker_id, &cause, &command)?;
+            let mut result = apply(db, &run.worker_id, &cause, &command, workspace)?;
             let reference = OperationReference {
                 actor: run.worker_id.clone(),
                 request_id: cause.clone(),
@@ -795,6 +797,7 @@ fn member_effect(
                     revision: input.revision,
                     answer: input.answer,
                 },
+                workspace,
             )?;
             if decision.request_delivery == run.delivery_id {
                 crate::disposition::record(
@@ -841,6 +844,7 @@ fn member_effect(
                     decision: input.decision.clone(),
                     reason: input.reason.clone(),
                 },
+                workspace,
             )?;
             let current: Task = load(db, "tasks", &task.id)?;
             let mut updated = run.clone();
@@ -922,7 +926,13 @@ fn member_effect(
             options: input.options,
         },
     };
-    apply(db, &run.worker_id, &operation.operation_id, &command)
+    apply(
+        db,
+        &run.worker_id,
+        &operation.operation_id,
+        &command,
+        workspace,
+    )
 }
 
 fn authorize_intake(db: &Connection, run: &Run, task: &Task) -> Result<()> {

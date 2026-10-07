@@ -280,6 +280,7 @@ pub(crate) fn apply(
                 revision: task.revision,
                 reason: format!("本人恢复事项 {} 决定取消", d.id),
             },
+            std::path::Path::new("."),
         ),
         _ => Err(Error::Conflict("恢复选择无效".into())),
     };
