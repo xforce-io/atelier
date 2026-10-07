@@ -98,7 +98,7 @@ pub fn describe(
         Ok(store) => store,
         Err(Error::NotFound(_)) if team_id.is_none() && task_id.is_none() => {
             return Ok(
-                json!({"protocol":2,"state":"workspace_missing","identity":null,"scope":{"workspace":path},"guidance":"先在用户指定的新目录或空目录执行 workspace init --name <本人名称>，再重新 describe；不自动覆盖旧内容。","operations":[operation("workspace.init","workspace init --name <本人名称>","创建工作区及唯一本人，不启动服务或任务。"),operation("doctor","doctor","查询缺失情况，不创建对象。")]}),
+                json!({"protocol":2,"state":"workspace_missing","identity":null,"scope":{"workspace":path},"pendingDecisions":[],"guidance":"先在用户指定的新目录或空目录执行 workspace init --name <本人名称>，再重新 describe；不自动覆盖旧内容。","operations":[operation("workspace.init","workspace init --name <本人名称>","创建工作区及唯一本人，不启动服务或任务。"),operation("doctor","doctor","查询缺失情况，不创建对象。")]}),
             );
         }
         Err(e) => return Err(e),
@@ -299,10 +299,35 @@ impl Store {
         if active && leader && allowed(Permission::Arrange) && allowed(Permission::Communicate) {
             guidance.push_str(COORDINATION);
         }
-        let result = json!({"protocol":2,"state":if task.is_some(){"task"}else if team.is_some(){"team"}else{"workspace"},"identity":{"workerId":actor,"kind":"human"},"scope":{"workspace":self.workspace_path,"teamId":selected,"taskId":task_id,"taskRevision":task.as_ref().map(|t|t.revision),"authorizationRevision":team.as_ref().map(|t|t.authorization_revision)},"permissions":permissions,"isTeamLeader":leader,"guidance":guidance,"operations":operations,"notice":"索引表示身份与权限匹配，业务前置由实际命令再次核验；未选择团队不推断团队权限。"});
+        let pending = pending_decisions(&tx, actor)?;
+        let result = json!({"protocol":2,"state":if task.is_some(){"task"}else if team.is_some(){"team"}else{"workspace"},"identity":{"workerId":actor,"kind":"human"},"scope":{"workspace":self.workspace_path,"teamId":selected,"taskId":task_id,"taskRevision":task.as_ref().map(|t|t.revision),"authorizationRevision":team.as_ref().map(|t|t.authorization_revision)},"pendingDecisions":pending,"permissions":permissions,"isTeamLeader":leader,"guidance":guidance,"operations":operations,"notice":"索引表示身份与权限匹配，业务前置由实际命令再次核验；未选择团队不推断团队权限。"});
         tx.commit()?;
         Ok(result)
     }
+}
+
+/// Open decisions the local human must answer. Visible on every describe,
+/// including calls that have not selected a task.
+fn pending_decisions(db: &rusqlite::Connection, actor: &str) -> Result<Vec<Value>> {
+    let mut stmt = db.prepare("SELECT data FROM decisions WHERE json_extract(data,'$.handler')=?1 AND json_extract(data,'$.state')='open' ORDER BY rowid")?;
+    let rows = stmt
+        .query_map([actor], |r| r.get::<_, String>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let mut pending = Vec::with_capacity(rows.len());
+    for row in rows {
+        let decision: DecisionRequest = serde_json::from_str(&row)?;
+        let task: Task = load(db, "tasks", &decision.task_id)?;
+        pending.push(json!({
+            "id": decision.id,
+            "revision": decision.revision,
+            "taskId": decision.task_id,
+            "kind": decision.kind,
+            "question": decision.question,
+            "options": decision.options,
+            "currentArtifact": task.current_artifact,
+        }));
+    }
+    Ok(pending)
 }
 
 /// The installed tool catalogue is the sole source for operation files. All

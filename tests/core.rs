@@ -11426,6 +11426,49 @@ fn host_skill_uses_actual_frozen_role_and_current_permissions() {
 }
 
 #[test]
+fn describe_lists_open_human_decisions_without_a_selected_task() {
+    let mut f = Fixture::new(true);
+    let task_id = f.create()["task"]["id"].as_str().unwrap().to_owned();
+    let sql = rusqlite::Connection::open(f.dir.path().join("atelier.sqlite3")).unwrap();
+    sql.execute(
+        "UPDATE tasks SET data=json_set(data,'$.current_artifact',?2) WHERE id=?1",
+        rusqlite::params![task_id, "artifact-under-decision"],
+    )
+    .unwrap();
+    drop(sql);
+    let human = f.human.clone();
+    let leader = f.team.leader.clone();
+    let own = f.decision_request(&task_id, &human, "ask-human");
+    f.decision_request(&task_id, &leader, "ask-leader");
+    let described = f.store.host_skill_description(None, None).unwrap();
+    let pending = described["pendingDecisions"].as_array().unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0]["id"], own["decision"]["id"]);
+    assert_eq!(pending[0]["taskId"], task_id);
+    assert_eq!(pending[0]["kind"], "clarification");
+    assert_eq!(pending[0]["question"], "是否补充离线交付要求？");
+    assert_eq!(pending[0]["options"], json!(["补充", "等待"]));
+    assert_eq!(pending[0]["currentArtifact"], "artifact-under-decision");
+    let selected = f
+        .store
+        .host_skill_description(None, Some(task_id.as_str()))
+        .unwrap();
+    assert_eq!(selected["pendingDecisions"], described["pendingDecisions"]);
+    f.store
+        .execute(
+            "answer",
+            &Command::DecisionRespond {
+                id: own["decision"]["id"].as_str().unwrap().into(),
+                revision: 1,
+                answer: "等待".into(),
+            },
+        )
+        .unwrap();
+    let answered = f.store.host_skill_description(None, None).unwrap();
+    assert_eq!(answered["pendingDecisions"], json!([]));
+}
+
+#[test]
 fn member_skill_bundle_contains_exact_installed_operations_and_only_relevant_guidance() {
     let check = |description: &Value| {
         let tools = description["tools"].as_array().unwrap();
