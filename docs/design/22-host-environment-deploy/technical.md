@@ -1,6 +1,6 @@
 # L2 技术设计：部署成员在本机部署，由核心核对结果
 
-版本：v0.4，2026-10-07；状态：Draft。依据：[L1 v0.4](product.md)、[Issue #22](https://github.com/xforce-io/atelier/issues/22)。改写 [部署职责 L2 v0.1](../5-deploy-duty/technical.md) 第 4 节「提交」。工作区格式从 23 升到 24。
+版本：v0.4，2026-10-07；状态：Approved（2026-10-07 用户审查通过）。依据：[L1 v0.4](product.md)、[Issue #22](https://github.com/xforce-io/atelier/issues/22)。改写 [部署职责 L2 v0.1](../5-deploy-duty/technical.md) 第 4 节「提交」。工作区格式从 23 升到 24。
 
 ## 1. 数据
 
