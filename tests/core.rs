@@ -14253,6 +14253,114 @@ fn deploy_verify_lists_mismatches_and_unhealthy_service_then_passes_after_fix() 
 }
 
 #[test]
+fn deploy_verify_records_symlink_on_delete_without_stopping_the_runtime() {
+    let mut f = Fixture::new(false);
+    grant_human_deployer(&mut f);
+    let root = register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let (verification, accepted) = accept_for_deploy(&mut f);
+    let task_id = verification.task_id.clone();
+    let revision = accepted["task"]["revision"].as_u64().unwrap();
+    let task = f.store.task(&task_id).unwrap();
+    let delete_path = task
+        .deploy
+        .as_ref()
+        .unwrap()
+        .export
+        .as_ref()
+        .unwrap()
+        .changes
+        .iter()
+        .find(|change| change.action == "delete")
+        .expect("fixture export deletes a path")
+        .path
+        .clone();
+    let dest = root.join(&delete_path);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    let _ = std::fs::remove_file(&dest);
+    std::os::unix::fs::symlink("/etc/hosts", &dest).unwrap();
+    f.store
+        .execute(
+            "verify-symlink",
+            &Command::DeployVerify {
+                id: task_id.clone(),
+                revision,
+            },
+        )
+        .unwrap();
+    drain_host(&mut f);
+    assert!(!f.store.drive_host_work().unwrap());
+    let task = f.store.task(&task_id).unwrap();
+    assert_eq!(task.state, "active");
+    assert!(task.outcome.is_none());
+    let failed = &task.deploy.as_ref().unwrap().verifications[0];
+    assert_eq!(failed.state, "failed");
+    assert!(
+        failed
+            .mismatches
+            .iter()
+            .any(|item| item.contains(&delete_path) && item.contains("路径含符号链接")),
+        "{:?}",
+        failed.mismatches
+    );
+    assert_eq!(f.store.runtime_snapshot().unwrap()["state"], "running");
+}
+
+#[test]
+fn deploy_verify_records_missing_command_without_stopping_the_runtime() {
+    let mut f = Fixture::new(false);
+    grant_human_deployer(&mut f);
+    register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        None,
+        None,
+        vec![format!(
+            "/tmp/atelier-missing-verify-{}",
+            std::process::id()
+        )],
+        None,
+    );
+    let (verification, accepted) = accept_for_deploy(&mut f);
+    let task_id = verification.task_id.clone();
+    let revision = accepted["task"]["revision"].as_u64().unwrap();
+    f.store
+        .execute(
+            "verify-missing",
+            &Command::DeployVerify {
+                id: task_id.clone(),
+                revision,
+            },
+        )
+        .unwrap();
+    drain_host(&mut f);
+    assert!(!f.store.drive_host_work().unwrap());
+    let task = f.store.task(&task_id).unwrap();
+    assert_eq!(task.state, "active");
+    let failed = &task.deploy.as_ref().unwrap().verifications[0];
+    assert_eq!(failed.state, "failed");
+    assert!(
+        failed
+            .mismatches
+            .iter()
+            .any(|item| item.contains("核对命令无法启动")),
+        "{:?}",
+        failed.mismatches
+    );
+    assert_eq!(f.store.runtime_snapshot().unwrap()["state"], "running");
+}
+
+#[test]
 fn deploy_verify_rejects_non_deployer_outside_run_pending_command_and_after_end() {
     let mut f = Fixture::new(false);
     let (deployer, configuration) = add_deployer(&mut f, true);
@@ -14441,10 +14549,7 @@ fn deploy_verify_rejects_after_registration_change() {
     grant_human_deployer(&mut f);
     accept_for_deploy(&mut f);
     let listed = f.store.list("task").unwrap();
-    let task = f
-        .store
-        .task(listed[0]["id"].as_str().unwrap())
-        .unwrap();
+    let task = f.store.task(listed[0]["id"].as_str().unwrap()).unwrap();
     f.store
         .execute(
             "verify-queue",

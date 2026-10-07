@@ -268,9 +268,7 @@ pub(crate) fn change_list(
     artifact: &[FileEntry],
     baseline: &[FileEntry],
 ) -> Result<Vec<DeployChange>> {
-    fn index(
-        files: &[FileEntry],
-    ) -> Result<std::collections::BTreeMap<&str, &FileEntry>> {
+    fn index(files: &[FileEntry]) -> Result<std::collections::BTreeMap<&str, &FileEntry>> {
         let mut map = std::collections::BTreeMap::new();
         for file in files {
             if map.insert(file.path.as_str(), file).is_some() {

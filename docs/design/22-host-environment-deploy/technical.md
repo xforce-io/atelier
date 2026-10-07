@@ -301,7 +301,7 @@ atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kai
 | S3.A4 | `host_exec_rejects_invalid_cwd_argv_timeout_concurrency_and_role` |
 | S3.A5 | `host_command_timeout_kills_the_process_group`、`interrupted_host_command_is_recorded_unknown` |
 | S4.A1 | `deploy_verify_passes_and_closes_as_deployed`：夹具 HTTP 服务 |
-| S4.A2 | `deploy_verify_lists_mismatches_and_unhealthy_service_then_passes_after_fix` |
+| S4.A2 | `deploy_verify_lists_mismatches_and_unhealthy_service_then_passes_after_fix`；删除路径上的符号链接与无法启动的核对命令记为失败且运行服务继续：`deploy_verify_records_symlink_on_delete_without_stopping_the_runtime`、`deploy_verify_records_missing_command_without_stopping_the_runtime` |
 | S4.A3 | `deploy_verify_rejects_non_deployer_outside_run_pending_command_and_after_end`；`task_deploy` 已不在工具清单 |
 | S4.A4 | CLI `human_deploy_verify_requires_running_runtime` |
 | S4.A5 | `deploy_verify_runs_registered_command_with_artifact_env`、`deploy_verify_rejects_after_registration_change` |

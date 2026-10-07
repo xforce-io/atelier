@@ -552,12 +552,12 @@ pub(crate) fn wait_command(mut started: StartedCommand) -> Result<Outcome> {
 
 pub(crate) fn execute_verify(spec: VerifySpec) -> Result<Outcome> {
     let (mismatches, exit_code, output_tail) = match &spec.method {
-        VerifyMethod::Files => (compare_files(&spec.code_root, &spec.changes)?, None, None),
+        VerifyMethod::Files => (compare_files(&spec.code_root, &spec.changes), None, None),
         VerifyMethod::Command {
             argv,
             timeout_seconds,
         } => {
-            let mut child = spawn(
+            let mut child = match spawn(
                 argv,
                 &spec.code_root,
                 &spec.log_path,
@@ -575,12 +575,35 @@ pub(crate) fn execute_verify(spec: VerifySpec) -> Result<Outcome> {
                     ("ATELIER_ARTIFACT_DIGEST", spec.artifact_digest.as_str()),
                     ("ATELIER_TASK_ID", spec.task_id.as_str()),
                 ],
-            )?;
+            ) {
+                Ok(child) => child,
+                Err(error) => {
+                    return Ok(verification_outcome(
+                        &spec,
+                        None,
+                        None,
+                        vec![format!("核对命令无法启动：{error}")],
+                        None,
+                    ));
+                }
+            };
             let pgid = child.id();
             let deadline = Instant::now() + Duration::from_secs(u64::from(*timeout_seconds));
             let status = loop {
-                if let Some(status) = child.try_wait()? {
-                    break Some(status);
+                match child.try_wait() {
+                    Ok(Some(status)) => break Some(status),
+                    Ok(None) => {}
+                    Err(error) => {
+                        signal_group(pgid, "-KILL");
+                        let _ = child.wait();
+                        return Ok(verification_outcome(
+                            &spec,
+                            None,
+                            tail(&spec.log_path),
+                            vec![format!("核对命令无法等待：{error}")],
+                            spec.service.as_ref().map(probe_health),
+                        ));
+                    }
                 }
                 if Instant::now() >= deadline {
                     signal_group(pgid, "-TERM");
@@ -618,18 +641,34 @@ pub(crate) fn execute_verify(spec: VerifySpec) -> Result<Outcome> {
         }
     };
     let health = spec.service.as_ref().map(probe_health);
+    Ok(verification_outcome(
+        &spec,
+        exit_code,
+        output_tail,
+        mismatches,
+        health,
+    ))
+}
+
+fn verification_outcome(
+    spec: &VerifySpec,
+    exit_code: Option<i32>,
+    output_tail: Option<String>,
+    mismatches: Vec<String>,
+    health: Option<String>,
+) -> Outcome {
     let passed = mismatches.is_empty() && health.as_deref().is_none_or(|value| value == "200");
-    Ok(Outcome {
+    Outcome {
         kind: "verification",
-        id: spec.id,
-        task_id: spec.task_id,
+        id: spec.id.clone(),
+        task_id: spec.task_id.clone(),
         state: if passed { "passed" } else { "failed" }.into(),
         exit_code,
         output_tail,
         mismatches,
         health,
         pgid: None,
-    })
+    }
 }
 
 pub(crate) fn finish(db: &mut Connection, epoch: &str, outcome: Outcome) -> Result<()> {
@@ -1019,16 +1058,15 @@ fn signal_group(pgid: u32, signal: &str) {
         .status();
 }
 
-fn compare_files(root: &Path, changes: &[DeployChange]) -> Result<Vec<String>> {
+fn compare_files(root: &Path, changes: &[DeployChange]) -> Vec<String> {
     let mut mismatches = Vec::new();
     for change in changes {
-        let path = root.join(&change.path);
         match change.action.as_str() {
-            "delete" => {
-                if path_exists_without_symlink(root, &change.path)? {
-                    mismatches.push(format!("{}: 应删除但仍存在", change.path));
-                }
-            }
+            "delete" => match path_exists_without_symlink(root, &change.path) {
+                Ok(true) => mismatches.push(format!("{}: 应删除但仍存在", change.path)),
+                Ok(false) => {}
+                Err(reason) => mismatches.push(format!("{}: {reason}", change.path)),
+            },
             "write" => match file_facts(root, &change.path) {
                 Ok((hash, executable)) => {
                     if Some(hash.as_str()) != change.sha256.as_deref()
@@ -1041,22 +1079,21 @@ fn compare_files(root: &Path, changes: &[DeployChange]) -> Result<Vec<String>> {
             },
             _ => mismatches.push(format!("{}: 未知改动", change.path)),
         }
-        let _ = path;
     }
-    Ok(mismatches)
+    mismatches
 }
 
-fn path_exists_without_symlink(root: &Path, relative: &str) -> Result<bool> {
+fn path_exists_without_symlink(root: &Path, relative: &str) -> std::result::Result<bool, String> {
     let mut current = root.to_path_buf();
     for component in relative.split('/') {
         current.push(component);
         match fs::symlink_metadata(&current) {
             Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(Error::Conflict(format!("{relative}: 路径含符号链接")));
+                return Err("路径含符号链接".into());
             }
             Ok(_) => {}
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-            Err(error) => return Err(error.into()),
+            Err(error) => return Err(error.to_string()),
         }
     }
     Ok(true)
