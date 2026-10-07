@@ -1,6 +1,6 @@
 # L2 技术设计：部署成员在本机部署，由核心核对结果
 
-版本：v0.3，2026-10-07；状态：Draft。依据：[L1 v0.3](product.md)、[Issue #22](https://github.com/xforce-io/atelier/issues/22)。改写 [部署职责 L2 v0.1](../5-deploy-duty/technical.md) 第 4 节「提交」。工作区格式从 23 升到 24。
+版本：v0.4，2026-10-07；状态：Draft。依据：[L1 v0.4](product.md)、[Issue #22](https://github.com/xforce-io/atelier/issues/22)。改写 [部署职责 L2 v0.1](../5-deploy-duty/technical.md) 第 4 节「提交」。工作区格式从 23 升到 24。
 
 ## 1. 数据
 
@@ -12,8 +12,13 @@ pub struct Environment {
     pub name: String,                  // ^[a-z0-9][a-z0-9-]{0,62}$, immutable
     pub code_root: String,             // canonical absolute directory
     pub service: Option<HostService>,
+    pub verification: VerifyMethod,    // files (default) | command
     pub approval: CommandApproval,     // ask (default) | auto
     pub revision: u64,
+}
+pub enum VerifyMethod {
+    Files,
+    Command { argv: Vec<String>, timeout_seconds: u32 }, // runs in code_root
 }
 pub struct HostService {
     pub port: u16,                     // probed on 127.0.0.1 only
@@ -60,7 +65,11 @@ pub struct DeployVerification {
     pub requested_by: String,
     pub state: String,                     // queued|running|passed|failed|interrupted
     pub epoch: Option<String>,
-    pub mismatches: Vec<String>,           // "path: reason"
+    pub method: String,                    // files | command
+    pub mismatches: Vec<String>,           // files: "path: reason"
+    pub exit_code: Option<i32>,            // command
+    pub output_tail: Option<String>,       // command, last 16 KiB
+    pub log_path: Option<String>,          // command
     pub health: Option<String>,
     pub ended_at: Option<String>,
 }
@@ -78,10 +87,11 @@ pub struct DeployVerification {
 
 ```text
 atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kairo-prod \
-  --port 8787 --health-path / [--approval auto]
+  --port 8787 --health-path / [--approval auto] \
+  [--verify-timeout 120 -- /usr/bin/env bash -lc 'test "$(cat VERSION)" = "$ATELIER_ARTIFACT_DIGEST"']
 ```
 
-`update` 需要 `--revision`，可以替换任一字段，`--no-service` 清除服务，名称不可改。`--approval auto` 的输出里带一段固定的英文警告。
+写了 `--` 之后的参数，核对方式就是 `command`，否则是 `files`。`update` 需要 `--revision`，可以替换任一字段；`--no-service` 清除服务，`--verify-files` 改回文件比对，名称不可改。`--approval auto` 的输出里带一段固定的英文警告。
 
 权限：只在 CLI 管理入口受理，执行者必须是 `workspace.self_id`。成员工具不提供这两个命令。
 
@@ -96,6 +106,9 @@ atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kai
    - 不包含 `$HOME/.ssh`、`$HOME/.gnupg`、`$HOME/Library/Keychains`、`$HOME/.config/gh`，也不在它们之内。
 3. 与其他环境的 `code_root` 互不包含。
 4. `port` 非 0，且未被其他环境登记；`health_path` 以 `/` 开头，最长 1024 字节，只含可见 ASCII。
+5. 核对命令：
+   - `argv` 有 1 至 64 项，`argv[0]` 为绝对路径，每项不含 NUL，最长 64 KiB。
+   - `timeout_seconds` 在 1 至 600 之间，缺省 120。
 
 环境不缓存在运行服务内存里，每次使用都从库里读取。
 
@@ -124,6 +137,7 @@ atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kai
    - `changes` 为空则阻塞，原因是「产出与基线没有差异」。
 2. 导出产出：
    - 复用 `export_artifact` 的清单与 blob 校验，写入 `{workspace}/deploy-exports/.tmp-{uuid}`，再改名为 `{workspace}/deploy-exports/{acceptanceId}`。
+   - 改动清单另写为 `{workspace}/deploy-exports/{acceptanceId}.changes.json`。
    - 文件权限设为 `0o444` 或 `0o555`，目录设为 `0o555`。
    - 目标目录已存在即失败。
    - `export_artifact` 对工作区内部的禁止规则不放宽；这里使用新的内部函数，目标目录固定，不接受调用方传入。
@@ -215,9 +229,23 @@ atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kai
 
 运行服务领取后，在独立任务里执行：
 
-1. 对每个 `changes` 项，从 `code_root` 起逐个路径分量用 `symlink_metadata` 检查，遇到符号链接即记为不一致。
-   - `write`：必须是普通文件，摘要与可执行位都与清单相同。
-   - `delete`：必须不存在。
+1. 按快照的 `verification` 执行：
+   - `files`：对每个 `changes` 项，从 `code_root` 起逐个路径分量用 `symlink_metadata` 检查，遇到符号链接即记为不一致。
+     - `write`：必须是普通文件，摘要与可执行位都与清单相同。
+     - `delete`：必须不存在。
+   - `command`：执行方式与 6.3 相同，只有以下几处不同：
+     - 工作目录为 `code_root`。
+     - 超时取登记值。
+     - 日志写入 `{workspace}/deploy-verifications/{id}.log`。
+     - 不经确认。
+     - 在继承的环境变量之外，增加以下变量：
+       - `ATELIER_CODE_ROOT`
+       - `ATELIER_EXPORT_DIR`
+       - `ATELIER_CHANGES_FILE`：改动清单的 JSON 文件，位于导出目录旁，只读。
+       - `ATELIER_ARTIFACT_ID`
+       - `ATELIER_ARTIFACT_DIGEST`：产出的 `content_digest`。
+       - `ATELIER_TASK_ID`
+     - 退出码为 0 即通过。超时或非 0 即不通过，并记录 `exit_code` 与 `output_tail`。
 2. 有服务时做健康检查：
    - 每 500ms 用 `tokio::net::TcpStream` 连接 `127.0.0.1:{port}`，发送 `GET {health_path} HTTP/1.1`，带 `Host: 127.0.0.1` 和 `Connection: close`，只读取状态行。
    - 30 秒内收到 200 即通过。
@@ -241,6 +269,7 @@ atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kai
 
 - `host.md`：
   - 登记前问齐名称、代码目录、端口与健康检查路径，不猜测。
+  - 问清部署方式。若服务不是直接从代码目录运行，比如镜像、编译产物、构建产物或已安装的包，就建议一条核对命令，经用户确认后再登记。
   - 用户要求自动执行时，先说明其含义。
   - `pendingDecisions` 里 `host_command` 一类事项，要原样展示参数、工作目录、理由与风险说明，用户明确同意后才回答「执行」。
 - `SKILL.md` 的部署说明：从导出目录取文件，用 `host_exec` 完成改动，用 `deploy_verify` 请求核对，做不下去就报告阻塞。
@@ -267,6 +296,7 @@ atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kai
 | S4.A2 | `deploy_verify_lists_mismatches_and_unhealthy_service_then_passes_after_fix` |
 | S4.A3 | `deploy_verify_rejects_non_deployer_outside_run_pending_command_and_after_end`；`task_deploy` 已不在工具清单 |
 | S4.A4 | CLI `human_deploy_verify_requires_running_runtime` |
+| S4.A5 | `deploy_verify_runs_registered_command_with_artifact_env`、`deploy_verify_rejects_after_registration_change` |
 
 原有部署职责测试改为经 `deploy_verify` 驱动，断言保持：成功与验收分开记录，尚未领取的投递被结束。依赖失败自报的两个测试删除；同一 L1 意图由 S4.A2 覆盖，即「核对失败时任务不关闭」。所有测试只使用临时目录与临时端口。
 
@@ -274,6 +304,7 @@ atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kai
 
 - **工作区升级不可回退。** 升级到 24 后，旧版本二进制打不开该工作区。这是首次迁移，只增加对象。
 - **命令以本人身份运行。** 本机命令能调用 Atelier CLI、改写工作区数据库，也能访问家目录。逐条确认是唯一的闸门；`auto` 等于交出本人身份。这是 L1 R7 的明确取舍，不在实现里另加启发式拦截。
-- **核对不能证明进程加载了新代码。** 见 L1 第 9 节第 2 项。
+- **文件比对不能证明进程加载了新代码。** 需要这一保证的环境，改用核对命令，见 L1 第 9 节第 2 项。
+- **核对命令以本人身份运行，不经确认。** 它由本人登记，部署成员不能修改；但部署成员可以通过本机命令改动它所检查的对象。
 - **只支持 macOS 与 Linux。** 进程组信号依赖 `/bin/kill`。其他平台遇到时直接失败。
 - **长时间等待确认。** 等待确认没有超时，部署会一直开放，由本人在 `pendingDecisions` 里处理。
