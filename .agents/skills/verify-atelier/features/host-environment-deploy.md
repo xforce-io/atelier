@@ -14,7 +14,7 @@ Issue #22。L1 `docs/design/22-host-environment-deploy/product.md` v0.5。L2 同
 
 ## S1.A3
 
-宿主按 `skills/atelier/references/host.md` 问齐登记字段，说明自动执行，并原样展示 `host_command` 待决定。此路径留待验证环节在真实宿主中执行。
+宿主按 `skills/atelier/SKILL.md` 与 `references/host.md` 问齐登记字段。改为自动执行必须分成两轮：第一轮只说明这等于把本人身份交给命令，不调用 `environment update`；用户下一条消息确认后才更新。`host_command` 待决定要原样展示。此路径在真实宿主中执行。
 
 ## S1.A4
 
