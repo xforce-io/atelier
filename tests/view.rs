@@ -245,7 +245,7 @@ fn view_reads_one_workspace_without_writing() {
     assert!(page.contains("来自负责人"));
     assert!(page.contains("来自核心&lt;script&gt;"));
     assert!(page.contains("class=\"party core\">核心</span>"));
-    assert!(page.contains(&format!("#latest")));
+    assert!(page.contains("#latest"));
     assert!(page.contains("id=\"latest\""));
     let ids = rowids(&page);
     assert_eq!(ids.len(), 3, "{page}");
