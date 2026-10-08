@@ -132,7 +132,7 @@ pub(crate) fn apply(
     let team: Team = load(db, "teams", &task.team_id)?;
     let permission = match kind.as_str() {
         "assignment.execute" | "assignment.rework" => Permission::Execute,
-        "assignment.deploy" => Permission::Deploy,
+        "assignment.deploy" | "host_command.result" | "deploy.verification" => Permission::Deploy,
         "handoff.verify" => Permission::Verify,
         _ if receiver == task.team_snapshot.leader => Permission::Arrange,
         _ => Permission::Communicate,
@@ -150,8 +150,10 @@ pub(crate) fn apply(
     if kind == "assignment.rework" {
         crate::rework::claimable(db, &task, id)?;
     }
-    if kind == "assignment.deploy"
-        && task.deploy.as_ref().map(|record| record.state.as_str()) != Some("open")
+    if matches!(
+        kind.as_str(),
+        "assignment.deploy" | "host_command.result" | "deploy.verification"
+    ) && task.deploy.as_ref().map(|record| record.state.as_str()) != Some("open")
     {
         return Err(Error::Conflict("部署尚未开放，不能重试".into()));
     }

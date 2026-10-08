@@ -1,4 +1,4 @@
-PRAGMA user_version = 23;
+PRAGMA user_version = 24;
 CREATE TABLE workspace (id TEXT PRIMARY KEY, self_id TEXT NOT NULL);
 CREATE TABLE workers (id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data)));
 CREATE TABLE teams (id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data)));
@@ -118,3 +118,6 @@ CREATE TABLE acceptance_decisions (id TEXT PRIMARY KEY REFERENCES decisions(id),
 CREATE UNIQUE INDEX one_open_acceptance ON decisions(task_id) WHERE json_extract(data,'$.kind')='acceptance' AND json_extract(data,'$.state')='open';
 
 CREATE UNIQUE INDEX recovery_event ON decisions(task_id,json_extract(data,'$.recovery.delivery_id'),json_extract(data,'$.recovery.event')) WHERE json_extract(data,'$.kind')='recovery';
+
+CREATE TABLE environments (id TEXT PRIMARY KEY, data TEXT NOT NULL CHECK(json_valid(data)));
+CREATE UNIQUE INDEX environments_by_name ON environments(json_extract(data,'$.name'));

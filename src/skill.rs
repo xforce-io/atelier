@@ -98,7 +98,7 @@ pub fn describe(
         Ok(store) => store,
         Err(Error::NotFound(_)) if team_id.is_none() && task_id.is_none() => {
             return Ok(
-                json!({"protocol":2,"state":"workspace_missing","identity":null,"scope":{"workspace":path},"guidance":"先在用户指定的新目录或空目录执行 workspace init --name <本人名称>，再重新 describe；不自动覆盖旧内容。","operations":[operation("workspace.init","workspace init --name <本人名称>","创建工作区及唯一本人，不启动服务或任务。"),operation("doctor","doctor","查询缺失情况，不创建对象。")]}),
+                json!({"protocol":2,"state":"workspace_missing","identity":null,"scope":{"workspace":path},"pendingDecisions":[],"guidance":"先在用户指定的新目录或空目录执行 workspace init --name <本人名称>，再重新 describe；不自动覆盖旧内容。","operations":[operation("workspace.init","workspace init --name <本人名称>","创建工作区及唯一本人，不启动服务或任务。"),operation("doctor","doctor","查询缺失情况，不创建对象。")]}),
             );
         }
         Err(e) => return Err(e),
@@ -262,7 +262,7 @@ impl Store {
                     .is_some_and(|record| record.state == "open")
                 && allowed(Permission::Deploy)
             {
-                operations.push(operation("deploy.report","task deploy <Task> --revision <版本> --result succeeded|failed --reason <依据>","仅冻结部署成员提交部署结果。成功后任务关闭且结果为 deployed；失败保持未完成，不自动重试。核心不执行 compose、不合入、不 push。数字员工在部署运行中使用 task_deploy。"));
+                operations.push(operation("deploy.verify","task deploy verify <Task> --revision <版本>","仅冻结部署成员发起核对。运行服务须在运行。核心按登记方式判断已验收产出是否已在生产上，通过后任务关闭且结果为 deployed。不能自报。"));
             }
             if active
                 && allowed(Permission::Communicate)
@@ -299,10 +299,35 @@ impl Store {
         if active && leader && allowed(Permission::Arrange) && allowed(Permission::Communicate) {
             guidance.push_str(COORDINATION);
         }
-        let result = json!({"protocol":2,"state":if task.is_some(){"task"}else if team.is_some(){"team"}else{"workspace"},"identity":{"workerId":actor,"kind":"human"},"scope":{"workspace":self.workspace_path,"teamId":selected,"taskId":task_id,"taskRevision":task.as_ref().map(|t|t.revision),"authorizationRevision":team.as_ref().map(|t|t.authorization_revision)},"permissions":permissions,"isTeamLeader":leader,"guidance":guidance,"operations":operations,"notice":"索引表示身份与权限匹配，业务前置由实际命令再次核验；未选择团队不推断团队权限。"});
+        let pending = pending_decisions(&tx, actor)?;
+        let result = json!({"protocol":2,"state":if task.is_some(){"task"}else if team.is_some(){"team"}else{"workspace"},"identity":{"workerId":actor,"kind":"human"},"scope":{"workspace":self.workspace_path,"teamId":selected,"taskId":task_id,"taskRevision":task.as_ref().map(|t|t.revision),"authorizationRevision":team.as_ref().map(|t|t.authorization_revision)},"pendingDecisions":pending,"permissions":permissions,"isTeamLeader":leader,"guidance":guidance,"operations":operations,"notice":"索引表示身份与权限匹配，业务前置由实际命令再次核验；未选择团队不推断团队权限。"});
         tx.commit()?;
         Ok(result)
     }
+}
+
+/// Open decisions the local human must answer. Visible on every describe,
+/// including calls that have not selected a task.
+fn pending_decisions(db: &rusqlite::Connection, actor: &str) -> Result<Vec<Value>> {
+    let mut stmt = db.prepare("SELECT data FROM decisions WHERE json_extract(data,'$.handler')=?1 AND json_extract(data,'$.state')='open' ORDER BY rowid")?;
+    let rows = stmt
+        .query_map([actor], |r| r.get::<_, String>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let mut pending = Vec::with_capacity(rows.len());
+    for row in rows {
+        let decision: DecisionRequest = serde_json::from_str(&row)?;
+        let task: Task = load(db, "tasks", &decision.task_id)?;
+        pending.push(json!({
+            "id": decision.id,
+            "revision": decision.revision,
+            "taskId": decision.task_id,
+            "kind": decision.kind,
+            "question": decision.question,
+            "options": decision.options,
+            "currentArtifact": task.current_artifact,
+        }));
+    }
+    Ok(pending)
 }
 
 /// The installed tool catalogue is the sole source for operation files. All
@@ -335,6 +360,9 @@ pub(crate) fn member_bundle(run: &Run, tools: &[Value]) -> Result<Value> {
         "---\nname: atelier\ndescription: 处理当前绑定 Worker 的工作消息。\n---\n\n# Atelier 当前成员\n\n身份与 Task/Run/Delivery 由核心绑定，不能改用管理 CLI或自选角色。只用已装配工具，先 task_read，再按当前消息作决定。用途：{}。\n\n",
         run.purpose
     );
+    if names.contains(&"host_exec") {
+        root.push_str("部署：从导出目录取已验收文件，用 host_exec 完成改动，做完用 deploy_verify 请求核心核对。做不下去就报告阻塞，不能自报部署结果。\n\n");
+    }
     for path in files.keys() {
         root.push_str(&format!("读取 [{path}]({path})。\n"));
     }

@@ -132,7 +132,13 @@ fn idle(db: &Connection, task: &Task, requester: Option<&str>) -> Result<()> {
     }
     Ok(())
 }
-pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command) -> Result<Value> {
+pub(crate) fn apply(
+    db: &Connection,
+    actor: &str,
+    cause: &str,
+    command: &Command,
+    workspace: &std::path::Path,
+) -> Result<Value> {
     match command {
         Command::AcceptanceRequest {
             task_id,
@@ -267,7 +273,7 @@ pub(crate) fn apply(db: &Connection, actor: &str, cause: &str, command: &Command
             if *accept {
                 save_request(db, &d)?;
                 if task.team_snapshot.deployer.is_some() {
-                    crate::deploy::open_after_acceptance(db, &mut task, &d.id, cause)?;
+                    crate::deploy::open_after_acceptance(db, workspace, &mut task, &d.id, cause)?;
                 } else {
                     task.state = "closed".into();
                     task.outcome = Some("accepted".into());

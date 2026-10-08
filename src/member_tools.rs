@@ -147,12 +147,17 @@ pub(crate) fn describe(run: &Run, task: &Task) -> Result<Value> {
         && run.permissions.contains(&Permission::Deploy)
     {
         tools.push(tool(
-            "task_deploy",
-            "提交本次部署结果。succeeded 后任务关闭且 outcome 为 deployed；failed 保持任务未完成，不自动重试。核心不执行 compose、不合入、不 push。结果与验收记录分开保存。",
+            "host_exec",
+            "在冻结的部署目标上执行一条本机命令。命令只按参数执行，不表示部署。逐条确认的环境会先请本人选择执行或拒绝。返回 commandId 与状态，不等待进程结束。",
             object(
-                json!({"revision":revision,"result":{"enum":["succeeded","failed"]},"reason":text}),
-                &["revision", "result", "reason"],
+                json!({"argv":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":64},"cwd":{"type":"string"},"timeoutSeconds":{"type":"integer","minimum":1,"maximum":3600},"reason":text}),
+                &["argv", "reason"],
             ),
+        ));
+        tools.push(tool(
+            "deploy_verify",
+            "请核心按冻结的核对方式判断已验收产出是否已在生产上。通过后任务关闭且结果为已部署。不能自报成功或失败。",
+            object(json!({"revision": revision}), &["revision"]),
         ));
     }
     if matches!(run.purpose.as_str(), "execute" | "rework")
