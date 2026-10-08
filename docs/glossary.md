@@ -65,6 +65,7 @@
 | direct/直接会话入口 | 特定 Worker 之间直接交流的会话入口。 | — |
 | Business Feedback Loop/业务闭环 | 将执行效果反馈转化为检验、问题定位和后续任务的持续过程。 | — |
 | Workspace/工作区 | 当前本机使用者管理成员、团队、任务及其持久工作记录的独立本地范围。 | — |
+| Read-only View/只读界面 | 在本机打开、只展示一个工作区已有事实、不写入的界面。 | 管理后台 |
 | Model Connection/模型连接 | 遵循 milkie 统一连接契约，保存模型 API 或 agent CLI 的接入配置，不代表 Worker 身份或任务授权。 | — |
 | Execution Context/执行上下文 | 由 milkie 管理、可跨 Run 续接的执行状态，Atelier 保存其与 Worker、Task 和执行配置版本的关联。 | — |
 | Session Continuation/会话续接 | 使用既有执行上下文开始新一轮交互，不等于自动恢复中断执行、代码快照或外部副作用。 | — |
