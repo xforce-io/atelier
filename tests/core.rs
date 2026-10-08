@@ -12683,11 +12683,7 @@ fn drain_host(f: &mut Fixture) {
 
 fn accept_for_deploy(f: &mut Fixture) -> (atelier::verification::Verification, Value) {
     ensure_deploy_target(f);
-    let (run, verification) = f.acceptance_fixture();
-    f.store
-        .runtime_run_observed_stopped("service", &run.id, "fixture resources stopped")
-        .unwrap();
-    let request = f.acceptance_request(&verification);
+    let (verification, request) = prepare_acceptance(f);
     let accepted = f
         .store
         .execute(
@@ -12696,6 +12692,73 @@ fn accept_for_deploy(f: &mut Fixture) -> (atelier::verification::Verification, V
         )
         .unwrap();
     (verification, accepted)
+}
+
+fn prepare_acceptance(f: &mut Fixture) -> (atelier::verification::Verification, Value) {
+    let (run, verification) = f.acceptance_fixture();
+    f.store
+        .runtime_run_observed_stopped("service", &run.id, "fixture resources stopped")
+        .unwrap();
+    let request = f.acceptance_request(&verification);
+    (verification, request)
+}
+
+fn cli_drive(f: &Fixture, evidence: &str, args: &[&str]) -> Value {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_atelier"))
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .arg("--workspace")
+        .arg(f.dir.path())
+        .args(["--json", "--request-id", evidence])
+        .args(args)
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&output.stdout);
+    let value: Value = serde_json::from_str(&text).unwrap_or_else(|_| {
+        json!({
+            "ok": false,
+            "status": output.status.code(),
+            "stdout": text.to_string(),
+            "stderr": String::from_utf8_lossy(&output.stderr).to_string()
+        })
+    });
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(".agents/verify-runs/22");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join(format!("{evidence}.json")),
+        serde_json::to_string_pretty(&value).unwrap(),
+    )
+    .unwrap();
+    assert!(value["ok"] == true, "{evidence}: {value}");
+    value
+}
+
+fn cli_accept(
+    f: &Fixture,
+    evidence: &str,
+    verification: &atelier::verification::Verification,
+    request: &Value,
+) -> Value {
+    let revision = verification.task_revision.to_string();
+    let request_id = request["decision"]["id"].as_str().unwrap();
+    cli_drive(
+        f,
+        evidence,
+        &[
+            "task",
+            "accept",
+            &verification.task_id,
+            "--revision",
+            &revision,
+            "--request",
+            request_id,
+            "--request-revision",
+            "1",
+            "--reason",
+            "本人确认符合约定",
+            "--decision-ref",
+            evidence,
+        ],
+    )
 }
 
 #[test]
@@ -13706,6 +13769,333 @@ fn accept_without_deploy_environment_or_with_changed_registration_blocks() {
             .unwrap()
             .contains("登记已变化")
     );
+}
+
+#[test]
+fn cli_accept_without_deploy_target_blocks_and_leaves_the_task_active() {
+    let mut f = Fixture::new(false);
+    add_deployer(&mut f, true);
+    let (verification, request) = prepare_acceptance(&mut f);
+    let accepted = cli_accept(&f, "s2-a2-missing", &verification, &request);
+    assert_eq!(accepted["data"]["task"]["deploy"]["state"], "blocked");
+    assert!(
+        accepted["data"]["task"]["deploy"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("没有点名部署目标环境")
+    );
+    let shown = cli_drive(
+        &f,
+        "s2-a2-missing-show",
+        &["task", "show", &verification.task_id],
+    );
+    assert_eq!(shown["data"]["state"], "active");
+    assert!(shown["data"]["outcome"].is_null());
+    let mailbox = cli_drive(
+        &f,
+        "s2-a2-missing-mailbox",
+        &["mailbox", "list", "--worker", &f.human],
+    );
+    assert!(
+        mailbox["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|item| item["message"]["kind"] != "assignment.deploy")
+    );
+}
+
+#[test]
+fn cli_accept_after_registration_change_blocks() {
+    let mut f = Fixture::new(false);
+    add_deployer(&mut f, true);
+    register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let (verification, request) = prepare_acceptance(&mut f);
+    cli_drive(
+        &f,
+        "s2-a2-change-env",
+        &[
+            "environment",
+            "update",
+            "prod",
+            "--revision",
+            "1",
+            "--approval",
+            "auto",
+        ],
+    );
+    let accepted = cli_accept(&f, "s2-a2-changed", &verification, &request);
+    assert_eq!(accepted["data"]["task"]["deploy"]["state"], "blocked");
+    assert!(
+        accepted["data"]["task"]["deploy"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("登记已变化")
+    );
+    assert_eq!(accepted["data"]["task"]["state"], "active");
+    assert!(
+        accepted["data"]["acceptance"]["accepted"]
+            .as_bool()
+            .unwrap()
+    );
+}
+
+#[test]
+fn cli_accept_exports_read_only_artifact_and_keeps_the_frozen_snapshot() {
+    let mut f = Fixture::new(false);
+    let (deployer, _) = add_deployer(&mut f, true);
+    register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let (verification, request) = prepare_acceptance(&mut f);
+    cli_accept(&f, "s2-a1-accept", &verification, &request);
+    let shown = cli_drive(&f, "s2-a1-show", &["task", "show", &verification.task_id]);
+    assert_eq!(shown["data"]["deploy"]["state"], "open");
+    assert_eq!(shown["data"]["environment_snapshot"]["approval"], "ask");
+    let export_dir =
+        std::path::PathBuf::from(shown["data"]["deploy"]["export"]["dir"].as_str().unwrap());
+    let write = shown["data"]["deploy"]["export"]["changes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|change| change["action"] == "write")
+        .unwrap();
+    let file = export_dir.join(write["path"].as_str().unwrap());
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o444, "{}", file.display());
+    let dir_mode = std::fs::metadata(&export_dir).unwrap().permissions().mode() & 0o777;
+    assert_eq!(dir_mode, 0o555);
+    let sum = std::process::Command::new("shasum")
+        .args(["-a", "256", file.to_str().unwrap()])
+        .output()
+        .unwrap();
+    let digest = String::from_utf8(sum.stdout)
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .to_string();
+    assert_eq!(digest, write["sha256"].as_str().unwrap());
+    let mailbox = cli_drive(
+        &f,
+        "s2-a1-mailbox",
+        &["mailbox", "list", "--worker", &deployer],
+    );
+    assert!(mailbox["data"].as_array().unwrap().iter().any(|item| {
+        item["message"]["kind"] == "assignment.deploy" && item["status"] == "queued"
+    }));
+    cli_drive(
+        &f,
+        "s2-a1-update",
+        &[
+            "environment",
+            "update",
+            "prod",
+            "--revision",
+            "1",
+            "--approval",
+            "auto",
+        ],
+    );
+    let after = cli_drive(
+        &f,
+        "s2-a1-show-after",
+        &["task", "show", &verification.task_id],
+    );
+    assert_eq!(after["data"]["environment_snapshot"]["approval"], "ask");
+    let current = cli_drive(&f, "s2-a1-env-show", &["environment", "show", "prod"]);
+    assert_eq!(current["data"]["approval"], "auto");
+}
+
+#[test]
+fn cli_host_command_is_shown_then_runs_only_after_execute() {
+    let mut f = Fixture::new(false);
+    let (deployer, configuration) = add_deployer(&mut f, true);
+    let root = register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        None,
+        None,
+        Vec::new(),
+        None,
+    );
+    let (_, accepted) = accept_for_deploy(&mut f);
+    let task_id = accepted["task"]["id"].as_str().unwrap().to_string();
+    let (run, binding) = bind_deploy_run(&mut f, &deployer, &configuration);
+    host_exec_call(
+        &mut f,
+        &binding,
+        &run,
+        "touch",
+        &["/usr/bin/touch", "approved-marker"],
+        None,
+        ".",
+    );
+    assert!(!root.join("approved-marker").exists());
+    let described = cli_drive(
+        &f,
+        "s3-a1-describe",
+        &["skill", "describe", "--protocol", "2", "--task", &task_id],
+    );
+    let pending = &described["data"]["pendingDecisions"][0];
+    assert_eq!(pending["kind"], "host_command");
+    assert!(
+        pending["question"]
+            .as_str()
+            .unwrap()
+            .contains("approved-marker")
+    );
+    assert_eq!(pending["options"], json!(["执行", "拒绝"]));
+    let decision_id = pending["id"].as_str().unwrap().to_string();
+    let decision_revision = pending["revision"].as_u64().unwrap().to_string();
+    cli_drive(
+        &f,
+        "s3-a1-execute",
+        &[
+            "task",
+            "decision",
+            "respond",
+            &decision_id,
+            "--revision",
+            &decision_revision,
+            "--answer",
+            "执行",
+        ],
+    );
+    assert!(!root.join("approved-marker").exists());
+    f.store
+        .runtime_run_observed_stopped("service", &run.id, "fixture deploy run stopped")
+        .unwrap();
+    let _guard = RuntimeGuard(f.dir.path());
+    cli_drive(&f, "s3-a1-runtime", &["runtime", "start"]);
+    wait_until(|| {
+        root.join("approved-marker").is_file() && command_state(&f, &task_id) == "exited"
+    });
+    let shown = cli_drive(&f, "s3-a1-show", &["task", "show", &task_id]);
+    assert_eq!(shown["data"]["deploy"]["commands"][0]["state"], "exited");
+    assert_eq!(shown["data"]["deploy"]["commands"][0]["exit_code"], 0);
+}
+
+#[test]
+fn cli_human_deploy_verify_closes_when_the_runtime_is_running() {
+    let status = std::sync::Arc::new(std::sync::atomic::AtomicU16::new(200));
+    let port = health_server(status);
+    let mut f = Fixture::new(false);
+    grant_human_deployer(&mut f);
+    register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        Some(port),
+        Some("/health".into()),
+        Vec::new(),
+        None,
+    );
+    let (verification, accepted) = accept_for_deploy(&mut f);
+    let task_id = verification.task_id.clone();
+    let task = f.store.task(&task_id).unwrap();
+    materialize_export(
+        &task,
+        std::path::Path::new(&task.environment_snapshot.as_ref().unwrap().code_root),
+    );
+    let revision = accepted["task"]["revision"].as_u64().unwrap().to_string();
+    let _guard = RuntimeGuard(f.dir.path());
+    cli_drive(&f, "s4-a4-runtime", &["runtime", "start"]);
+    let verified = cli_drive(
+        &f,
+        "s4-a4-verify",
+        &[
+            "task",
+            "deploy",
+            "verify",
+            &task_id,
+            "--revision",
+            &revision,
+        ],
+    );
+    assert_eq!(verified["data"]["verification"]["state"], "passed");
+    assert_eq!(verified["data"]["verification"]["health"], "200");
+    assert_eq!(verified["data"]["task"]["state"], "closed");
+    assert_eq!(verified["data"]["task"]["outcome"], "deployed");
+    let acceptance_id = verified["data"]["task"]["deploy"]["acceptance_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let record = cli_drive(
+        &f,
+        "s4-a4-acceptance",
+        &["task", "acceptance", "show", &acceptance_id],
+    );
+    assert_eq!(record["data"]["accepted"], true);
+}
+
+#[test]
+fn cli_member_deploy_verify_closes_under_the_real_runtime() {
+    let status = std::sync::Arc::new(std::sync::atomic::AtomicU16::new(200));
+    let port = health_server(status);
+    let mut f = Fixture::new(false);
+    let (deployer, configuration) = add_deployer(&mut f, true);
+    register_environment(
+        &mut f,
+        "prod",
+        CommandApproval::Ask,
+        Some(port),
+        Some("/health".into()),
+        Vec::new(),
+        None,
+    );
+    let (verification, accepted) = accept_for_deploy(&mut f);
+    let task_id = verification.task_id.clone();
+    let revision = accepted["task"]["revision"].as_u64().unwrap();
+    let task = f.store.task(&task_id).unwrap();
+    materialize_export(
+        &task,
+        std::path::Path::new(&task.environment_snapshot.as_ref().unwrap().code_root),
+    );
+    let (run, binding) = bind_deploy_run(&mut f, &deployer, &configuration);
+    let queued = f
+        .store
+        .member_call(
+            &binding,
+            &member_operation(
+                &run,
+                "s4-a1-verify",
+                "deploy_verify",
+                json!({"revision": revision}),
+            ),
+        )
+        .unwrap();
+    assert_eq!(queued["ok"], true, "{queued}");
+    f.store
+        .runtime_run_observed_stopped("service", &run.id, "fixture deploy run stopped")
+        .unwrap();
+    let _guard = RuntimeGuard(f.dir.path());
+    cli_drive(&f, "s4-a1-runtime", &["runtime", "start"]);
+    wait_until(|| f.store.task(&task_id).unwrap().outcome.as_deref() == Some("deployed"));
+    let shown = cli_drive(&f, "s4-a1-show", &["task", "show", &task_id]);
+    assert_eq!(shown["data"]["state"], "closed");
+    assert_eq!(shown["data"]["outcome"], "deployed");
+    assert_eq!(
+        shown["data"]["deploy"]["verifications"][0]["state"],
+        "passed"
+    );
+    assert_eq!(shown["data"]["deploy"]["verifications"][0]["health"], "200");
 }
 
 #[test]

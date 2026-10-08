@@ -291,19 +291,19 @@ atelier environment create --name kairo-prod --code-root /Users/u/dev/github/kai
 | S1.A2 | `environment_registration_rejects_unsafe_paths_ports_and_overlaps`，每类输入一个用例 |
 | S1.A3 | verify feature `host-environment-deploy.md` 的宿主路径 |
 | S1.A4 | `member_tools_do_not_offer_environment_registration` |
-| S2.A1 | `accept_exports_read_only_artifact_and_change_list`、`task_keeps_frozen_environment_after_registration_change` |
-| S2.A2 | `accept_without_deploy_environment_or_with_changed_registration_blocks` |
+| S2.A1 | `accept_exports_read_only_artifact_and_change_list`、`task_keeps_frozen_environment_after_registration_change`；真实 CLI：`cli_accept_exports_read_only_artifact_and_keeps_the_frozen_snapshot` |
+| S2.A2 | `accept_without_deploy_environment_or_with_changed_registration_blocks`；真实 CLI：`cli_accept_without_deploy_target_blocks_and_leaves_the_task_active`、`cli_accept_after_registration_change_blocks` |
 | S2.A3 | 既有接受关闭测试保持有效 |
 | S2.A4 | `contract_rejects_unknown_environment_and_deploy_without_code_input` |
-| S3.A1 | `host_command_waits_for_approval_then_runs`：临时目录、真实运行服务 |
+| S3.A1 | `host_command_waits_for_approval_then_runs`；真实 CLI 展示并回答「执行」：`cli_host_command_is_shown_then_runs_only_after_execute` |
 | S3.A2 | `rejected_host_command_never_runs` |
 | S3.A3 | `auto_approval_runs_without_decision` |
 | S3.A4 | `host_exec_rejects_invalid_cwd_argv_timeout_concurrency_and_role` |
 | S3.A5 | `host_command_timeout_kills_the_process_group`、`interrupted_host_command_is_recorded_unknown` |
-| S4.A1 | `deploy_verify_passes_and_closes_as_deployed`：夹具 HTTP 服务 |
+| S4.A1 | `deploy_verify_passes_and_closes_as_deployed`；真实运行服务下成员核对后用 CLI 查询：`cli_member_deploy_verify_closes_under_the_real_runtime` |
 | S4.A2 | `deploy_verify_lists_mismatches_and_unhealthy_service_then_passes_after_fix`；删除路径上的符号链接与无法启动的核对命令记为失败且运行服务继续：`deploy_verify_records_symlink_on_delete_without_stopping_the_runtime`、`deploy_verify_records_missing_command_without_stopping_the_runtime` |
 | S4.A3 | `deploy_verify_rejects_non_deployer_outside_run_pending_command_and_after_end`；`task_deploy` 已不在工具清单 |
-| S4.A4 | CLI `human_deploy_verify_requires_running_runtime` |
+| S4.A4 | CLI `human_deploy_verify_requires_running_runtime`；运行服务开着时核对通过：`cli_human_deploy_verify_closes_when_the_runtime_is_running` |
 | S4.A5 | `deploy_verify_runs_registered_command_with_artifact_env`、`deploy_verify_rejects_after_registration_change` |
 
 原有部署职责测试改为经 `deploy_verify` 驱动，断言保持：成功与验收分开记录，尚未领取的投递被结束。依赖失败自报的两个测试删除；同一 L1 意图由 S4.A2 覆盖，即「核对失败时任务不关闭」。所有测试只使用临时目录与临时端口。
