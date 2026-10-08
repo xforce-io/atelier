@@ -35,6 +35,7 @@ pub mod runtime;
 pub mod sample;
 pub mod store;
 pub mod verification;
+pub mod view;
 
 use serde::Serialize;
 

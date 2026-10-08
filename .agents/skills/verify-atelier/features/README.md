@@ -18,6 +18,7 @@ Issue #1：异步团队、CLI 与产品 Atelier Skill，L1 v0.10 / L2 v0.28。20
 | [asynchronous-team.md](asynchronous-team.md) | S7 / A1–A5 | 数字团队不依赖宿主阶段调用，从提交目标持续处理工作消息到人类待办；含普通说明与消息循环。 |
 | [deploy-duty.md](deploy-duty.md) | Issue #5 / S1.A1–A6 | 显式部署职责收到部署投递；验收记录与部署结果分开；未部署不关闭。无该职责的团队仍在接受后关闭。 |
 | [host-environment-deploy.md](host-environment-deploy.md) | Issue #22 / S1.A1–S4.A5 | 登记本机部署目标、导出已验收产出、部署成员经确认执行本机命令、核心按登记方式核对后关闭为已部署。 |
+| [readonly-workspace-ui.md](readonly-workspace-ui.md) | Issue #25 / S1.A1、S2.A1、S3.A1、S3.A2、S4.A1、S5.A1 | 本机 `view` 只读打开一个工作区，点一名工作成员看其发出和收到的工作消息。 |
 
 冻结检查名称与检查记录 ID 的可发现性修复已分别由原真实任务和 Grok 负责人复核，详见实现记录；历史计数保留在对应日期小节，以本文顶部的逐项审计为当前状态。
 

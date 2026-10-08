@@ -48,6 +48,8 @@ enum Top {
     },
     #[command(subcommand)]
     Workspace(Workspace),
+    /// 在本机回环地址打开当前工作区的只读界面。
+    View,
     #[command(subcommand)]
     Worker(WorkerCommand),
     #[command(subcommand)]
@@ -725,6 +727,7 @@ fn run(cli: Cli) -> Result<Value> {
     }
     let mut store = Store::open(&cli.workspace)?;
     let command = match cli.command {
+        Top::View => unreachable!("view is served from main"),
         Top::Task(TaskCommand::Recovery(RecoveryCommand::Apply { id, revision })) => {
             Command::RecoveryApply { id, revision }
         }
@@ -1343,6 +1346,22 @@ fn main() -> ExitCode {
         }
     };
     let json_output = cli.json;
+    if matches!(cli.command, Top::View) {
+        return match atelier::view::serve(&cli.workspace, json_output) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                if json_output {
+                    println!(
+                        "{}",
+                        json!({"version":2,"ok":false,"error":{"code":error.code(),"message":error.to_string()}})
+                    );
+                } else {
+                    eprintln!("{}：{error}", error.code());
+                }
+                ExitCode::from(1)
+            }
+        };
+    }
     match run(cli) {
         Ok(value) => {
             let result = Envelope {
