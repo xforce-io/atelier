@@ -293,6 +293,13 @@ fn view_reads_one_workspace_without_writing() {
     assert_eq!(messages[2]["sender"]["name"], "核心");
     assert_eq!(messages[2]["recipient"]["workerId"], human);
     assert_eq!(messages[2]["body"], "来自核心<script>");
+    for message in &messages {
+        let id = message["id"].as_str().unwrap();
+        assert!(
+            page.contains(&format!("<p>消息 <code>{id}</code></p>")),
+            "message id must be visible, not only a data attribute: {id}"
+        );
+    }
 
     let unknown = uuid::Uuid::new_v4().to_string();
     let (status, body) = http(&view.url, &format!("/?worker={unknown}"));

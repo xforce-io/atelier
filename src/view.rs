@@ -393,9 +393,10 @@ fn render_page(snapshot: &Snapshot) -> String {
                 let latest = index + 1 == messages.len();
                 let id_attr = if latest { " id=\"latest\"" } else { "" };
                 list.push_str(&format!(
-                    "<li{id_attr} data-message-id=\"{}\" data-rowid=\"{}\"><p>发送者：{}</p><p>接收者：{}</p><pre class=\"body\">{}</pre></li>",
+                    "<li{id_attr} data-message-id=\"{}\" data-rowid=\"{}\"><p>消息 <code>{}</code></p><p>发送者：{}</p><p>接收者：{}</p><pre class=\"body\">{}</pre></li>",
                     escape(&message.id),
                     message.rowid,
+                    escape(&message.id),
                     party_html(&message.sender),
                     party_html(&message.recipient),
                     escape(&message.body),
