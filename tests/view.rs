@@ -245,8 +245,10 @@ fn view_reads_one_workspace_without_writing() {
     assert!(page.contains("来自负责人"));
     assert!(page.contains("来自核心&lt;script&gt;"));
     assert!(page.contains("class=\"party core\">核心</span>"));
-    assert!(page.contains("#latest"));
     assert!(page.contains("id=\"latest\""));
+    assert!(page.contains("list.scrollTop=list.scrollHeight"));
+    assert!(!page.contains("scrollIntoView"));
+    assert!(!page.contains("#latest"));
     let ids = rowids(&page);
     assert_eq!(ids.len(), 3, "{page}");
     assert!(ids.windows(2).all(|pair| pair[0] < pair[1]), "{ids:?}");
@@ -274,6 +276,7 @@ fn view_reads_one_workspace_without_writing() {
     let (status, idle_page) = http(&view.url, &format!("/?worker={idle}"));
     assert_eq!(status, 200, "{idle_page}");
     assert!(idle_page.contains("0 条"));
+    assert!(idle_page.contains("这名工作成员没有发出或收到的工作消息。"));
     assert!(!idle_page.contains("data-message-id"));
 
     let (status, facts) = http(&view.url, "/facts");
@@ -304,7 +307,13 @@ fn view_reads_one_workspace_without_writing() {
     let unknown = uuid::Uuid::new_v4().to_string();
     let (status, body) = http(&view.url, &format!("/?worker={unknown}"));
     assert_eq!(status, 404, "{body}");
+    assert!(body.contains("找不到这名工作成员"));
+    assert!(body.contains("href=\"/\""));
     assert!(!body.contains("来自核心"));
+    let (status, missing) = http(&view.url, "/missing");
+    assert_eq!(status, 404, "{missing}");
+    assert!(missing.contains("没有这个地址"));
+    assert!(missing.contains("href=\"/\""));
     let (status, _) = http(&view.url, "/");
     let (posted, _) = {
         let host = view
