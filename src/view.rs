@@ -66,12 +66,20 @@ pub fn serve(workspace: &Path, json_output: bool) -> Result<()> {
         stream.set_read_timeout(Some(Duration::from_secs(2)))?;
         stream.set_write_timeout(Some(Duration::from_secs(2)))?;
         if let Err(error) = respond(&mut stream, &workspace) {
+            let (content_type, body) = if matches!(error, Error::NotFound(_)) {
+                (
+                    "text/html; charset=utf-8".to_string(),
+                    not_found_page(&error.to_string()),
+                )
+            } else {
+                ("text/plain; charset=utf-8".to_string(), error.to_string())
+            };
             let _ = write_http(
                 &mut stream,
                 error_status(&error),
                 error_reason(&error),
-                "text/plain; charset=utf-8",
-                error.to_string().as_bytes(),
+                &content_type,
+                body.as_bytes(),
             );
         }
         let _ = stream.shutdown(std::net::Shutdown::Both);
@@ -167,13 +175,13 @@ fn respond(stream: &mut TcpStream, workspace: &Path) -> Result<()> {
             let raw_id = path
                 .strip_prefix("/workers/")
                 .and_then(|rest| rest.strip_suffix("/messages"))
-                .ok_or_else(|| Error::NotFound("unknown path".into()))?;
+                .ok_or_else(|| Error::NotFound("没有这个地址".into()))?;
             let id = parse_worker_id(raw_id)?;
             let snapshot = load_snapshot(workspace, Some(&id))?;
             let body = serde_json::to_vec(&snapshot.messages.unwrap_or_default())?;
             write_http(stream, 200, "OK", "application/json", &body)?;
         }
-        _ => return Err(Error::NotFound("unknown path".into())),
+        _ => return Err(Error::NotFound("没有这个地址".into())),
     }
     Ok(())
 }
@@ -255,7 +263,7 @@ fn load_snapshot(workspace: &Path, selected: Option<&str>) -> Result<Snapshot> {
         None => None,
         Some(id) => {
             if !workers.iter().any(|worker| worker.id == id) {
-                return Err(Error::NotFound("worker does not exist".into()));
+                return Err(Error::NotFound("找不到这名工作成员".into()));
             }
             Some(messages_for(&db, &workers, id)?)
         }
@@ -370,7 +378,7 @@ fn render_page(snapshot: &Snapshot) -> String {
             ""
         };
         workers.push_str(&format!(
-            "<li><a class=\"worker\" href=\"/?worker={}#latest\" data-worker-id=\"{}\"{aria}><span class=\"name\">{}</span> <code>{}</code></a></li>",
+            "<li><a class=\"worker\" href=\"/?worker={}\" data-worker-id=\"{}\"{aria}><span class=\"name\">{}</span> <code>{}</code></a></li>",
             escape(&worker.id),
             escape(&worker.id),
             escape(&worker.name),
@@ -382,7 +390,7 @@ fn render_page(snapshot: &Snapshot) -> String {
             "<p id=\"messages-empty\">点一名工作成员后查看其发出和收到的工作消息。</p>".to_string()
         }
         Some(messages) if messages.is_empty() => {
-            "<p id=\"messages-count\">0 条</p><ol id=\"messages\"></ol>".to_string()
+            "<p id=\"messages-count\">0 条</p><p id=\"messages-empty\">这名工作成员没有发出或收到的工作消息。</p><ol id=\"messages\"></ol>".to_string()
         }
         Some(messages) => {
             let mut list = format!(
@@ -402,12 +410,14 @@ fn render_page(snapshot: &Snapshot) -> String {
                     escape(&message.body),
                 ));
             }
-            list.push_str("</ol><script>document.getElementById(\"latest\")?.scrollIntoView({block:\"end\"})</script>");
+            list.push_str(
+                "</ol><script>function fitMessages(){const list=document.getElementById(\"messages\");if(!list)return;const room=Math.max(160,window.innerHeight-list.getBoundingClientRect().top-24);list.style.maxHeight=room+\"px\";list.scrollTop=list.scrollHeight}fitMessages();addEventListener(\"resize\",fitMessages)</script>",
+            );
             list
         }
     };
     format!(
-        "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><title>只读工作区</title><style>{style}</style></head><body><header><p>工作区</p><p id=\"workspace-id\"><code>{workspace}</code></p><p>运行状态</p><p id=\"runtime-state\">{state}</p></header><main><section><h1>工作成员</h1><ul id=\"workers\">{workers}</ul></section><section><h1>工作消息</h1>{messages}</section></main></body></html>",
+        "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>只读工作区</title><style>{style}</style></head><body><header><p>工作区</p><p id=\"workspace-id\"><code>{workspace}</code></p><p>运行状态</p><p id=\"runtime-state\">{state}</p></header><main><section><h1>工作成员</h1><ul id=\"workers\">{workers}</ul></section><section><h1>工作消息</h1>{messages}</section></main></body></html>",
         style = PAGE_STYLE,
         workspace = escape(&snapshot.workspace_id),
         state = escape(&snapshot.runtime_state),
@@ -434,6 +444,14 @@ fn escape(value: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+fn not_found_page(message: &str) -> String {
+    format!(
+        "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>只读工作区</title><style>{style}</style></head><body><main><p>{message}</p><p><a href=\"/\">返回工作区</a></p></main></body></html>",
+        style = PAGE_STYLE,
+        message = escape(message),
+    )
 }
 
 fn write_http(
@@ -470,7 +488,7 @@ fn error_reason(error: &Error) -> &'static str {
     }
 }
 
-const PAGE_STYLE: &str = "body{margin:0;background:#f3efe6;color:#1d1a16;font:16px/1.5 'Iowan Old Style',Palatino,'Songti SC',serif}header,main{padding:24px}main{display:grid;grid-template-columns:16rem 1fr;gap:24px}a{color:inherit}#workers{list-style:none;padding:0}a.worker{display:block;padding:8px 10px;text-decoration:none}a.worker[aria-current]{background:#1d1a16;color:#f3efe6}#messages{max-height:70vh;overflow:auto;padding-left:1.2rem}pre.body{white-space:pre-wrap;font:inherit;margin:0}code{font-family:ui-monospace,monospace;font-size:.85em}";
+const PAGE_STYLE: &str = "body{margin:0;background:#f3efe6;color:#1d1a16;font:16px/1.5 'Iowan Old Style',Palatino,'Songti SC',serif}header,main{padding:24px}main{display:grid;grid-template-columns:minmax(12rem,16rem) minmax(0,1fr);gap:24px}section{min-width:0}a{color:inherit}#workers{list-style:none;padding:0}a.worker{display:block;padding:8px 10px;text-decoration:none}a.worker[aria-current]{background:#1d1a16;color:#f3efe6}#messages{max-height:70vh;overflow:auto;min-width:0;padding-left:1.2rem}pre.body{white-space:pre-wrap;font:inherit;margin:0}code{font-family:ui-monospace,monospace;font-size:.85em;overflow-wrap:anywhere}@media (max-width:720px){main{grid-template-columns:1fr}}";
 
 #[cfg(test)]
 mod tests {
