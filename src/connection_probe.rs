@@ -46,6 +46,7 @@ struct Preparation {
     record: Record,
     version: ConnectionVersion,
     reference: Option<CredentialReference>,
+    workspace: PathBuf,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -65,6 +66,7 @@ impl Outcome {
             message: None,
         }
     }
+    #[cfg(test)]
     fn current_binary_unreadable() -> Self {
         Self {
             state: "failed".into(),
@@ -249,6 +251,7 @@ impl Store {
                 record,
                 version: selected,
                 reference,
+                workspace: self.workspace_path.clone(),
             }),
         ))
     }
@@ -368,12 +371,8 @@ pub async fn test(store: &mut Store, request_id: &str, command: &Command) -> Res
     )?)
 }
 
-fn outcome_for_credential(error: &Error) -> Outcome {
-    if crate::credential::is_current_binary_unreadable(error) {
-        Outcome::current_binary_unreadable()
-    } else {
-        Outcome::new("failed", "credential_unavailable")
-    }
+fn outcome_for_credential(_error: &Error) -> Outcome {
+    Outcome::new("failed", "credential_unavailable")
 }
 
 async fn observe(preparation: Preparation) -> Outcome {
@@ -389,9 +388,10 @@ async fn observe(preparation: Preparation) -> Outcome {
     let Some(reference) = preparation.reference else {
         return Outcome::new("failed", "credential_missing");
     };
+    let workspace = preparation.workspace.clone();
     let secret = match tokio::time::timeout_at(
         deadline,
-        tokio::task::spawn_blocking(move || crate::credential::load_secret(&reference)),
+        tokio::task::spawn_blocking(move || crate::credential::load_secret(&workspace, &reference)),
     )
     .await
     {
@@ -498,18 +498,13 @@ mod tests {
         }
     }
     #[test]
-    fn unreadable_keychain_uses_a_fixed_message_and_rejects_other_text() {
-        let outcome = outcome_for_credential(&Error::Unavailable(
-            crate::credential::CURRENT_BINARY_UNREADABLE.into(),
-        ));
-        assert_eq!(outcome.code, "credential_unreadable");
-        assert_eq!(
-            outcome.message.as_deref(),
-            Some(crate::credential::CURRENT_BINARY_UNREADABLE)
-        );
+    fn credential_read_failure_stays_unavailable_and_rejects_secret_text() {
+        let outcome = outcome_for_credential(&Error::Unavailable("凭据文件无法读写".into()));
+        assert_eq!(outcome.code, "credential_unavailable");
+        assert!(outcome.message.is_none());
         outcome.validate().unwrap();
         let generic = outcome_for_credential(&Error::Unavailable(
-            "Keychain 不可用或访问被拒绝；未回退到明文凭据".into(),
+            crate::credential::CURRENT_BINARY_UNREADABLE.into(),
         ));
         assert_eq!(generic.code, "credential_unavailable");
         assert!(generic.message.is_none());

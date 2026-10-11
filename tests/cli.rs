@@ -1668,18 +1668,23 @@ fn skill_describe_distinguishes_initialization_corruption_and_protocol_conflicts
     );
 }
 
-#[cfg(target_os = "macos")]
 #[test]
-#[ignore = "re-signs two CLI copies and writes one synthetic Keychain item"]
-fn rebuilt_binary_cannot_read_an_existing_keychain_item() {
+fn rebuilt_binary_reads_the_workspace_credential_file() {
     let source = std::path::PathBuf::from(env!("CARGO_BIN_EXE_atelier"));
     let dir = tempfile::tempdir().unwrap();
     let first = dir.path().join("atelier-a");
     let second = dir.path().join("atelier-b");
     std::fs::copy(&source, &first).unwrap();
     std::fs::copy(&source, &second).unwrap();
-    sign(&first, "io.xforce.atelier.issue6.a");
-    sign(&second, "io.xforce.atelier.issue6.b");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for path in [&first, &second] {
+            let mut permissions = std::fs::metadata(path).unwrap().permissions();
+            permissions.set_mode(permissions.mode() | 0o111);
+            std::fs::set_permissions(path, permissions).unwrap();
+        }
+    }
     let workspace = dir.path().join("workspace");
     let config = dir.path().join("connection.json");
     std::fs::write(
@@ -1752,13 +1757,12 @@ fn rebuilt_binary_cannot_read_an_existing_keychain_item() {
         None,
     );
     assert_eq!(foreign["ok"], true, "{foreign}");
-    assert_eq!(
-        foreign["data"]["code"], "credential_unreadable",
+    assert!(
+        !matches!(
+            foreign["data"]["code"].as_str(),
+            Some("credential_unreadable" | "credential_missing" | "credential_unavailable")
+        ),
         "{foreign}"
-    );
-    assert_eq!(
-        foreign["data"]["message"],
-        "当前二进制无法读取已有 Keychain 项，请用当前二进制重新设置凭据"
     );
     assert!(!foreign.to_string().contains(secret));
     let owner = run(
@@ -1796,21 +1800,6 @@ fn rebuilt_binary_cannot_read_an_existing_keychain_item() {
     assert!(!cleared.to_string().contains(secret));
 }
 
-#[cfg(target_os = "macos")]
-fn sign(path: &Path, identifier: &str) {
-    let output = std::process::Command::new("codesign")
-        .args(["--force", "--sign", "-", "--identifier", identifier])
-        .arg(path)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-#[cfg(target_os = "macos")]
 fn run(binary: &Path, workspace: &Path, args: &[&str], stdin: Option<&str>) -> Value {
     let mut command = std::process::Command::new(binary);
     command

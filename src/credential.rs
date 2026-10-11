@@ -1,4 +1,4 @@
-//! Credentials stay in the macOS Keychain. SQLite contains only immutable
+//! API credentials stay in workspace files. SQLite contains only immutable
 //! operation identity, version binding and credential generation references.
 use crate::{
     Error, Result,
@@ -10,9 +10,12 @@ use fs2::FileExt;
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::{fs::OpenOptions, path::Path};
+use std::{
+    fs::OpenOptions,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
-const SERVICE: &str = "io.xforce.atelier.api";
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CredentialReference {
     pub connection_version: String,
@@ -29,66 +32,91 @@ struct Setting {
     reference: CredentialReference,
     published: bool,
 }
-/// errSecItemNotFound. The account has no Keychain item.
-const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
-/// errSecAuthFailed. The item ACL refused this process.
-const ERR_SEC_AUTH_FAILED: i32 = -25293;
-/// errSecInteractionNotAllowed. A prompt would be required, and prompts are disabled.
-const ERR_SEC_INTERACTION_NOT_ALLOWED: i32 = -25308;
 
 pub const CURRENT_BINARY_UNREADABLE: &str =
     "当前二进制无法读取已有 Keychain 项，请用当前二进制重新设置凭据";
 
 fn unavailable() -> Error {
-    Error::Unavailable("Keychain 不可用或访问被拒绝；未回退到明文凭据".into())
+    Error::Unavailable("凭据文件无法读写".into())
 }
 
-fn current_binary_unreadable() -> Error {
-    Error::Unavailable(CURRENT_BINARY_UNREADABLE.into())
-}
-
-pub fn is_current_binary_unreadable(error: &Error) -> bool {
-    matches!(error, Error::Unavailable(message) if message == CURRENT_BINARY_UNREADABLE)
-}
-
-/// Map a Keychain read failure. Authorization failures mean the item is present
-/// but this signed binary cannot read it without a prompt. Other codes stay a
-/// generic Keychain failure. The secret is never copied into the error.
-fn read_failure(code: i32) -> Error {
-    if code == ERR_SEC_AUTH_FAILED || code == ERR_SEC_INTERACTION_NOT_ALLOWED {
-        current_binary_unreadable()
-    } else {
-        unavailable()
+fn credential_path(workspace: &Path, account: &str) -> Result<PathBuf> {
+    if account.is_empty()
+        || account.contains('/')
+        || account.contains('\\')
+        || account.contains('\0')
+        || account == "."
+        || account == ".."
+    {
+        return Err(Error::Invalid("凭据账号无效".into()));
     }
+    Ok(workspace.join("credentials").join(account))
 }
-#[cfg(target_os = "macos")]
-fn read(account: &str) -> Result<Option<Vec<u8>>> {
-    let _guard = security_framework::os::macos::keychain::SecKeychain::disable_user_interaction()
-        .map_err(|_| unavailable())?;
-    match security_framework::passwords::get_generic_password(SERVICE, account) {
-        Ok(bytes) => Ok(Some(bytes)),
-        Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(None),
-        Err(error) => Err(read_failure(error.code())),
+
+fn private_directory(path: &Path) -> Result<()> {
+    if let Ok(metadata) = std::fs::symlink_metadata(path) {
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            return Err(Error::Invalid("凭据目录无效".into()));
+        }
+        return Ok(());
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        let mut builder = std::fs::DirBuilder::new();
+        builder.mode(0o700);
+        builder.create(path).map_err(|_| unavailable())?;
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir(path).map_err(|_| unavailable())?;
+    }
+    Ok(())
 }
-#[cfg(not(target_os = "macos"))]
-fn read(_account: &str) -> Result<Option<Vec<u8>>> {
-    Err(unavailable())
+
+fn read(workspace: &Path, account: &str) -> Result<Option<Vec<u8>>> {
+    let path = credential_path(workspace, account)?;
+    let metadata = match std::fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(unavailable()),
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(Error::Invalid("凭据文件无效".into()));
+    }
+    if metadata.len() > 16384 {
+        return Err(unavailable());
+    }
+    std::fs::read(&path).map(Some).map_err(|_| unavailable())
 }
-#[cfg(target_os = "macos")]
-fn write(account: &str, secret: &[u8]) -> Result<()> {
-    let _guard = security_framework::os::macos::keychain::SecKeychain::disable_user_interaction()
-        .map_err(|_| unavailable())?;
-    security_framework::passwords::set_generic_password(SERVICE, account, secret)
-        .map_err(|_| unavailable())
+
+fn write(workspace: &Path, account: &str, secret: &[u8]) -> Result<()> {
+    let path = credential_path(workspace, account)?;
+    let directory = path.parent().ok_or_else(unavailable)?;
+    private_directory(directory)?;
+    if let Ok(metadata) = std::fs::symlink_metadata(&path) {
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err(Error::Invalid("凭据文件无效".into()));
+        }
+    }
+    let temporary = directory.join(format!(".{account}.tmp"));
+    let mut file = std::fs::File::create(&temporary).map_err(|_| unavailable())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))
+            .map_err(|_| unavailable())?;
+    }
+    file.write_all(secret).map_err(|_| unavailable())?;
+    file.sync_all().map_err(|_| unavailable())?;
+    drop(file);
+    std::fs::rename(&temporary, &path).map_err(|_| unavailable())?;
+    Ok(())
 }
-#[cfg(not(target_os = "macos"))]
-fn write(_account: &str, _secret: &[u8]) -> Result<()> {
-    Err(unavailable())
-}
+
 /// Trusted service only. Never expose the returned value to a member tool or log.
-pub fn load_secret(reference: &CredentialReference) -> Result<String> {
-    let bytes = read(&reference.account)?
+pub fn load_secret(workspace: &Path, reference: &CredentialReference) -> Result<String> {
+    let bytes = read(workspace, &reference.account)?
         .ok_or_else(|| Error::Unavailable("API 凭据缺失；请通过受保护入口重新设置".into()))?;
     let secret = String::from_utf8(bytes).map_err(|_| unavailable())?;
     validate(&secret)?;
@@ -146,7 +174,7 @@ impl Store {
             .transpose()
     }
     /// Management entry only; the secret is never part of Command or request
-    /// fingerprints. A per-workspace lock serializes Keychain publication.
+    /// fingerprints. A per-workspace lock serializes credential file publication.
     pub fn set_credential(
         &mut self,
         request: &str,
@@ -248,7 +276,7 @@ impl Store {
             tx.commit()?;
             s
         };
-        match read(&setting.reference.account)? {
+        match read(&self.workspace_path, &setting.reference.account)? {
             Some(existing) if existing != secret.as_bytes() => {
                 return Err(Error::Conflict(
                     "同 requestId 的凭据内容不同；更换凭据须使用新请求".into(),
@@ -257,10 +285,14 @@ impl Store {
             Some(_) => {}
             None if setting.published => {
                 return Err(Error::Unavailable(
-                    "该操作的 Keychain 内容已缺失；请使用新请求设置凭据".into(),
+                    "该操作的凭据文件已缺失；请使用新请求设置凭据".into(),
                 ));
             }
-            None => write(&setting.reference.account, secret.as_bytes())?,
+            None => write(
+                &self.workspace_path,
+                &setting.reference.account,
+                secret.as_bytes(),
+            )?,
         }
         if setting.published {
             return self.request(request);
@@ -301,7 +333,7 @@ impl Store {
         let command = Command::CredentialSet {
             id: id.into(),
             revision,
-            version: setting.version_selector,
+            version: setting.version_selector.clone(),
         };
         let encoded = serde_json::to_string(&command)?;
         let fingerprint = crate::content::digest(encoded.as_bytes());
@@ -320,20 +352,18 @@ impl Store {
     }
 }
 
-#[cfg(target_os = "macos")]
-fn remove(account: &str) -> Result<()> {
-    let _guard = security_framework::os::macos::keychain::SecKeychain::disable_user_interaction()
-        .map_err(|_| unavailable())?;
-    match security_framework::passwords::delete_generic_password(SERVICE, account) {
-        Ok(()) => Ok(()),
-        Err(e) if e.code() == -25300 => Ok(()),
+fn remove(workspace: &Path, account: &str) -> Result<()> {
+    let path = credential_path(workspace, account)?;
+    match std::fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            Err(Error::Invalid("凭据文件无效".into()))
+        }
+        Ok(_) => std::fs::remove_file(&path).map_err(|_| unavailable()),
         Err(_) => Err(unavailable()),
     }
 }
-#[cfg(not(target_os = "macos"))]
-fn remove(_account: &str) -> Result<()> {
-    Err(unavailable())
-}
+
 impl Store {
     /// Removes exactly the selected local credential, not the provider's token
     /// or other versions. Durable intent makes a lost deletion reply retryable.
@@ -417,7 +447,7 @@ impl Store {
             tx.commit()?;
             s
         };
-        remove(&setting.reference.account)?;
+        remove(&self.workspace_path, &setting.reference.account)?;
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -457,22 +487,33 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
-    use super::{ERR_SEC_AUTH_FAILED, ERR_SEC_INTERACTION_NOT_ALLOWED, read_failure};
+    use super::{credential_path, read, write};
     use crate::Error;
 
     #[test]
-    fn authorization_failure_names_the_current_binary_and_omits_secrets() {
-        for code in [ERR_SEC_AUTH_FAILED, ERR_SEC_INTERACTION_NOT_ALLOWED] {
-            let message = read_failure(code).to_string();
-            assert_eq!(
-                message,
-                "当前二进制无法读取已有 Keychain 项，请用当前二进制重新设置凭据"
-            );
-            assert!(!message.contains("synthetic-secret"));
-        }
-        let generic = read_failure(-25291).to_string();
-        assert!(generic.contains("Keychain 不可用或访问被拒绝"));
-        assert!(!generic.contains("当前二进制"));
-        assert!(matches!(read_failure(-25291), Error::Unavailable(_)));
+    fn file_roundtrip_is_readable_without_a_keychain() {
+        let directory = tempfile::tempdir().unwrap();
+        let secret = b"synthetic-secret";
+        write(directory.path(), "account-one", secret).unwrap();
+        assert_eq!(
+            read(directory.path(), "account-one").unwrap().unwrap(),
+            secret
+        );
+        let stored =
+            std::fs::read(directory.path().join("credentials").join("account-one")).unwrap();
+        assert_eq!(stored, secret);
+    }
+
+    #[test]
+    fn credential_account_cannot_escape_the_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            credential_path(directory.path(), "../outside"),
+            Err(Error::Invalid(_))
+        ));
+        assert!(matches!(
+            write(directory.path(), "nested/account", b"secret"),
+            Err(Error::Invalid(_))
+        ));
     }
 }

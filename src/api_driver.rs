@@ -71,7 +71,7 @@ async fn prepare(
                     ));
                 }
                 directories.prepare_directories(&workspace)?;
-                crate::credential::load_secret(&reference)
+                crate::credential::load_secret(&workspace, &reference)
             })
             .await
             .map_err(|_| Error::Unavailable("API 执行准备线程退出".into()))??;

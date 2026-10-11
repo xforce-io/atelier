@@ -18,7 +18,7 @@ Atelier 以 Worker 统一表达 Human Worker 和 Agent Worker（数字员工）�
 
 TypeScript API 与 agent CLI 接入已实现，固定依赖构建和运行机制测试见 [milkie 适配](adapters/milkie/README.md)；生产服务已按持久投递启动独立 API 接入进程，装配冻结身份、工具与原生上下文，并核对停止/重启后的资源。真实 API、Pi 与 Grok 路径，以及 CLI/Skill 异步团队交付已有验收证据。
 
-API 凭据已支持 macOS Keychain：`connection credential set <连接 ID> --revision <当前连接版本号> --stdin` 从管道读取，需带全局 `--request-id`；不接受秘密参数，也不回退到文件或环境自动发现。`--version <连接版本 ID>` 可显式修复已冻结的旧配置；`connection credential clear` 清除选定版本的本地凭据，不撤销提供商侧令牌。设置成功仅说明本地保存。`connection test <连接 ID> --revision <当前连接版本号>` 配合全局 `--request-id` 发起有界 API 检查；`--version` 可检查同连接的旧冻结版本。检查只用最小无工具请求，不创建 Task/Run；结果包含版本、凭据代次和固定错误类别，不回显模型正文。`connection show` 展示当前 `readiness` 与最近检查的适用性。原 requestId 只查询/重放记录；要再次探测，使用新 requestId。
+API 凭据保存在工作区的 `credentials/` 文件中，数据库只存引用：`connection credential set <连接 ID> --revision <当前连接版本号> --stdin` 从管道读取，需带全局 `--request-id`；不接受秘密参数，也不从环境变量自动发现。换二进制后直接读取同一工作区文件。本变更前写在钥匙串里的凭据不会被读取，需要再设置一次。`--version <连接版本 ID>` 可显式修复已冻结的旧配置；`connection credential clear` 清除选定版本的本地凭据，不撤销提供商侧令牌。设置成功仅说明本地保存。`connection test <连接 ID> --revision <当前连接版本号>` 配合全局 `--request-id` 发起有界 API 检查；`--version` 可检查同连接的旧冻结版本。检查只用最小无工具请求，不创建 Task/Run；结果包含版本、凭据代次和固定错误类别，不回显模型正文。`connection show` 展示当前 `readiness` 与最近检查的适用性。原 requestId 只查询/重放记录；要再次探测，使用新 requestId。
 
 执行成员的产出提交与资源停止后的固定已有核心实现：固定内容、产出引用和结果消息保持事务边界，partial 与完整产出区分；`artifact show <ID>` 可查询。API 服务现会在子进程停止和成员操作排空后固定候选；独立核心测试包含故障注入，真实模型形成固定产出的路径已验收。
 
