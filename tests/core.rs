@@ -6288,37 +6288,9 @@ fn credential_input_validation_does_not_create_secret_storage_or_business_reques
     );
 }
 
-#[cfg(target_os = "macos")]
 #[test]
-#[ignore = "writes synthetic credentials to the real macOS Keychain and removes those test entries"]
-fn real_keychain_credentials_are_versioned_private_and_retryable() {
+fn file_credentials_are_versioned_private_and_retryable() {
     let mut f = Fixture::new(false);
-    struct Cleanup(std::path::PathBuf);
-    impl Drop for Cleanup {
-        fn drop(&mut self) {
-            if let Ok(db) = rusqlite::Connection::open(&self.0) {
-                if let Ok(mut query) = db.prepare(
-                    "SELECT json_extract(data,'$.reference.account') FROM credential_requests",
-                ) {
-                    if let Ok(rows) = query.query_map([], |r| r.get::<_, String>(0)) {
-                        for account in rows.flatten() {
-                            let deleted = security_framework::passwords::delete_generic_password(
-                                "io.xforce.atelier.api",
-                                &account,
-                            );
-                            if !std::thread::panicking() {
-                                assert!(
-                                    deleted.is_ok() || deleted.is_err_and(|e| e.code() == -25300),
-                                    "测试 Keychain 项必须清理"
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    let _cleanup = Cleanup(f.dir.path().join("atelier.sqlite3"));
     let created = f
         .store
         .execute(
@@ -6340,7 +6312,7 @@ fn real_keychain_credentials_are_versioned_private_and_retryable() {
     assert_eq!(result["data"]["credentialGeneration"], 1);
     let reference = f.store.credential_reference(version).unwrap().unwrap();
     assert_eq!(
-        atelier::credential::load_secret(&reference).unwrap(),
+        atelier::credential::load_secret(f.dir.path(), &reference).unwrap(),
         secret
     );
     assert_eq!(
@@ -6424,7 +6396,7 @@ fn real_keychain_credentials_are_versioned_private_and_retryable() {
         "新连接版本不能自动继承旧凭据"
     );
     assert_eq!(
-        atelier::credential::load_secret(&reference).unwrap(),
+        atelier::credential::load_secret(f.dir.path(), &reference).unwrap(),
         secret,
         "旧冻结版本的引用仍可用"
     );
@@ -6442,7 +6414,7 @@ fn real_keychain_credentials_are_versioned_private_and_retryable() {
     assert!(f.store.connection_view(id).unwrap()["credentialGeneration"].is_null());
     let old_current = f.store.credential_reference(version).unwrap().unwrap();
     assert_eq!(
-        atelier::credential::load_secret(&old_current).unwrap(),
+        atelier::credential::load_secret(f.dir.path(), &old_current).unwrap(),
         "repaired-synthetic-old-version-secret"
     );
     db.execute_batch("CREATE TRIGGER fail_clear_publication BEFORE INSERT ON requests WHEN NEW.id='clear-retry' BEGIN SELECT RAISE(ABORT,'injected'); END;").unwrap();
@@ -6451,7 +6423,7 @@ fn real_keychain_credentials_are_versioned_private_and_retryable() {
             .clear_credential("clear-retry", id, 2, Some(version)),
         Err(Error::Database(_))
     ));
-    assert!(atelier::credential::load_secret(&old_current).is_err());
+    assert!(atelier::credential::load_secret(f.dir.path(), &old_current).is_err());
     db.execute_batch("DROP TRIGGER fail_clear_publication;")
         .unwrap();
     let cleared = f
@@ -6499,17 +6471,15 @@ fn real_keychain_credentials_are_versioned_private_and_retryable() {
                     !bytes
                         .windows(plaintext.len())
                         .any(|w| w == plaintext.as_bytes()),
-                    "工作区不得保存凭据明文"
+                    "数据库文件不得包含凭据明文"
                 );
             }
         }
     }
 }
 
-#[cfg(target_os = "macos")]
 #[test]
-#[ignore = "uses the real CLI and macOS Keychain with synthetic test credentials"]
-fn real_keychain_cli_accepts_only_stdin_and_replays_without_secret_output() {
+fn cli_credential_file_accepts_only_stdin_and_replays_without_secret_output() {
     use std::io::Write;
     let mut f = Fixture::new(false);
     let created = f
@@ -6608,10 +6578,7 @@ fn real_keychain_cli_accepts_only_stdin_and_replays_without_secret_output() {
                 .output()
                 .unwrap();
             if !std::thread::panicking() {
-                assert!(
-                    output.status.success(),
-                    "CLI 必须清理自己的合成 Keychain 项"
-                );
+                assert!(output.status.success(), "CLI 必须清理自己的合成凭据文件");
             }
         }
     }
@@ -6620,10 +6587,7 @@ fn real_keychain_cli_accepts_only_stdin_and_replays_without_secret_output() {
         id: id.into(),
     };
     let replay = invoke("cli-secret", &secret);
-    assert_eq!(
-        replay, first,
-        "同一 CLI 新进程能够读取 Keychain 并核对原请求"
-    );
+    assert_eq!(replay, first, "同一 CLI 新进程能够读取凭据文件并核对原请求");
     let diagnostic = || {
         let output = std::process::Command::new(env!("CARGO_BIN_EXE_atelier"))
             .arg("--workspace")

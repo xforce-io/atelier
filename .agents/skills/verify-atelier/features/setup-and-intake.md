@@ -2,9 +2,9 @@
 
 状态（2026-10-04）：真实 Pi 产品 Skill 已完成从空目录保存成员/未配齐团队、退出后补配置，以及缺失/损坏工作区、缺 CLI/旧协议停止的检查；真实三类连接和两种 CLI 续接另有证据。S1 仍未全量验收，剩余分支见[最新实现记录](../../../../docs/implementation/1-first-team-delivery.md)。以下保留此前检查点和验证方法，历史“尚未”不代表最新状态。标准为 [L1 v0.10 第 8 节](../../../../docs/design/1-first-team-delivery/product.md#8-验收与效果验证) 的 S1.A1–A3、A7–A18；本文件只提供路径，不复制另一套验收标准。
 
-## S1.A18 重建后的二进制读不到已有 Keychain 项
+## S1.A18 换二进制后仍能读取工作区里的 API 凭据
 
-用当前二进制 `connection credential set --stdin` 写入合成凭据后，换一份签名不同的二进制读取同一项。`connection test` 的停止说明为「当前二进制无法读取已有 Keychain 项，请用当前二进制重新设置凭据」，码为 `credential_unreadable`。输出不含秘密。原签名二进制仍能读到该项。不放宽 ACL，不把秘密写入数据库。
+用当前二进制 `connection credential set --stdin` 写入合成凭据后，换一份二进制对同一工作区执行 `connection test`。读取不再因签名不同而失败，输出不含秘密，数据库不含秘密。凭据在工作区 `credentials/` 文件中。Issue #24 的 S1.A1、S1.A2 走这条路径。本变更前的钥匙串项不会被读取。
 
 S1.A16 的准备入口现为 `connection prepare <id> --revision <n> --worker <id> [--version <冻结版本>]`，带稳定 requestId；目前核对已显式准备的本地固定镜像并建立 Worker 私有存储。记录 preparing/prepared/failed 与固定错误类别，经 connection show/request show 复查，prepared 不等于登录或执行可用。镜像构建开发脚本不能替代完整产品准备路径；专用登录管理、检查和服务接线已有开发集成，真实账号/模型与续接尚未验收，S1.A16 不记 pass。分别验证两个 Worker 不共用目录、重复请求不重做、已准备目录丢失不补建、没有 Task/Run 副作用。
 
@@ -23,7 +23,7 @@ S1.A16 的准备入口现为 `connection prepare <id> --revision <n> --worker <i
 CLI 和产品 Atelier Skill 分别验证；需要真实成员的路径不可用 stub 或宿主脚本替代。版本、对象和原始脱敏证据对应 L1 v0.10 / L2 v0.17。基础 CLI 的可用命令和集成测试见[实现记录](../../../../docs/implementation/1-first-team-delivery.md)；服务、成员执行与产品 Skill 路径尚未齐备，完整验收仍 BLOCKED，不填 pass。
 
 
-API 凭据现有真实 Keychain 与 CLI 测试：stdin 输入、无明文回显/落库、按连接版本绑定、重放/换秘密冲突、轮换和显式修复旧冻结版本、本地清除及失败重试。Keychain 读取/清理由创建者程序执行，未放宽系统访问控制；全部使用合成秘密。connection test 已支持 API 的最小无工具请求、30 秒有界观察/回收、失败脱敏与原请求重放；connection show 核对版本、凭据代次和接入版本。工作说明修改不使检查失效，修复后的新代次须用新 requestId 重测；成功结果的绑定测试使用 fixture。真实端点成功、两种隔离 CLI 登录/检查及产品 Skill 的完整真实团队路径未完成，不能据此汇总 S1 通过。
+API 凭据现有 CLI 与核心测试：stdin 输入、无明文回显、数据库不落秘密、按连接版本写入工作区文件、重放/换秘密冲突、轮换和显式修复旧冻结版本、本地清除及失败重试。换一份二进制读取同一工作区文件。全部使用合成秘密。connection test 已支持 API 的最小无工具请求、30 秒有界观察/回收、失败脱敏与原请求重放；connection show 核对版本、凭据代次和接入版本。工作说明修改不使检查失效，修复后的新代次须用新 requestId 重测；成功结果的绑定测试使用 fixture。真实端点成功、两种隔离 CLI 登录/检查及产品 Skill 的完整真实团队路径未完成，不能据此汇总 S1 通过。
 
 
 ## 产品 Skill 安装与范围
